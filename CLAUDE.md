@@ -13,7 +13,9 @@ Substitui os três shell scripts em `old/`, mantidos apenas como registro do
 comportamento anterior. Não os edite: o que eles faziam está descrito em
 "Herança dos scripts antigos", abaixo.
 
-Binário: `classroom`. Módulo: `github.com/alexkutzke/gitlab-classroom`.
+Binário: `classroom`, em `cmd/classroom/`. O `main` fica lá, e não na raiz,
+porque `go install` batiza o binário com o nome do último elemento do caminho.
+Módulo: `github.com/alexkutzke/gitlab-classroom`.
 
 ## Aplicação de referência
 
@@ -251,5 +253,5 @@ cadastro de alunos digitado à mão.
 ```bash
 go build ./...
 go test ./...
-go install .
+go install ./cmd/classroom
 ```

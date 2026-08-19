@@ -11,10 +11,10 @@ pelo prazo e guarda tudo em arquivos texto dentro da pasta da turma.
 ## Instalação
 
 ```bash
-go install github.com/alexkutzke/gitlab-classroom@latest
+go install github.com/alexkutzke/gitlab-classroom/cmd/classroom@latest
 ```
 
-O binário se chama `classroom`.
+O binário se chama `classroom`. Dentro do repositório, `go install ./cmd/classroom`.
 
 ## Token de acesso
 
