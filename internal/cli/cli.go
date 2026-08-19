@@ -41,6 +41,8 @@ func Executar() error {
 		cmdAlunos(),
 		cmdExercicios(),
 		cmdColetar(),
+		cmdClonar(),
+		cmdAbrir(),
 		cmdStatus(),
 		cmdRelatorio(),
 		cmdToken(),
