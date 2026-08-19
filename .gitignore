@@ -1,0 +1,13 @@
+# Binário
+/classroom
+/gitlab-classroom
+
+# Dados de aluno nunca entram no repositório da ferramenta.
+# O .classroom/ de cada turma e os clones das entregas contêm nome, e-mail e
+# GRR de pessoas reais; as fixtures de teste em internal/*/testdata são
+# anonimizadas e por isso ficam liberadas explicitamente abaixo.
+.classroom/
+entregas/
+*.csv
+*.xlsx
+!internal/*/testdata/*.csv
