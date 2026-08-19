@@ -90,3 +90,95 @@ func TestChaveNomeIgnoraAcentoECaixa(t *testing.T) {
 		t.Error("nomes equivalentes produziram chaves diferentes")
 	}
 }
+
+func exerciciosParaMedia() []Exercicio {
+	return []Exercicio{
+		{ID: "prepare", Repo: "r1", Prazo: NovaData(2026, time.August, 15), Peso: 1, Situacao: ExercicioAtivo},
+		{ID: "html", Repo: "r2", Prazo: NovaData(2026, time.September, 5), Peso: 3, Situacao: ExercicioAtivo},
+		{ID: "js", Repo: "r3", Prazo: NovaData(2026, time.October, 9), Peso: 1, Situacao: ExercicioAtivo},
+	}
+}
+
+func turmaComNotas() *Turma {
+	return &Turma{
+		Alunos: []Aluno{
+			{GRR: "GRR1", Nome: "Ana", Situacao: Ativo},
+			{GRR: "GRR2", Nome: "Bruno", Situacao: Ativo},
+		},
+		Exercicios: exerciciosParaMedia(),
+		Notas: []Nota{
+			{Exercicio: "prepare", GRR: "GRR1", Valor: 100},
+			{Exercicio: "html", GRR: "GRR1", Valor: 80},
+			{Exercicio: "prepare", GRR: "GRR2", Valor: 60},
+		},
+	}
+}
+
+func TestResultadosContamZeroParaPrazoVencidoSemNota(t *testing.T) {
+	tur := turmaComNotas()
+	hoje := NovaData(2026, time.September, 20) // js ainda em aberto
+
+	res := tur.Resultados(exerciciosParaMedia(), false, hoje)
+
+	// Ana: (100*1 + 80*3) / 4 = 85
+	if got := res[0].Media; got != 85 {
+		t.Errorf("média de Ana = %g, queria 85", got)
+	}
+	// Bruno: (60*1 + 0*3) / 4 = 15, o html vencido sem nota conta zero.
+	if got := res[1].Media; got != 15 {
+		t.Errorf("média de Bruno = %g, queria 15", got)
+	}
+	for _, r := range res {
+		if len(r.Considerados) != 2 {
+			t.Errorf("%s: exercício com prazo em aberto não podia entrar: %v",
+				r.Aluno.Nome, r.Considerados)
+		}
+	}
+}
+
+func TestResultadosSomenteLancadas(t *testing.T) {
+	tur := turmaComNotas()
+	hoje := NovaData(2026, time.September, 20)
+
+	res := tur.Resultados(exerciciosParaMedia(), true, hoje)
+
+	// Bruno só tem a nota do prepare, então a média é ela mesma.
+	if got := res[1].Media; got != 60 {
+		t.Errorf("média de Bruno = %g, queria 60", got)
+	}
+	if res[1].Lancadas != 1 {
+		t.Errorf("lançadas = %d, queria 1", res[1].Lancadas)
+	}
+}
+
+func TestRegistrarNotaSubstituiSemDuplicar(t *testing.T) {
+	tur := turmaComNotas()
+	tur.RegistrarNota(Nota{Exercicio: "html", GRR: "GRR1", Valor: 95, Comentario: "corrigido"})
+
+	n, ok := tur.Nota("html", "GRR1")
+	if !ok || n.Valor != 95 || n.Comentario != "corrigido" {
+		t.Errorf("nota não foi substituída: %+v", n)
+	}
+	contagem := 0
+	for _, x := range tur.Notas {
+		if x.Exercicio == "html" && x.GRR == "GRR1" {
+			contagem++
+		}
+	}
+	if contagem != 1 {
+		t.Errorf("esperava 1 registro, tem %d", contagem)
+	}
+}
+
+func TestRemoverNota(t *testing.T) {
+	tur := turmaComNotas()
+	if !tur.RemoverNota("html", "GRR1") {
+		t.Fatal("remoção não encontrou a nota")
+	}
+	if _, ok := tur.Nota("html", "GRR1"); ok {
+		t.Error("a nota continua no cadastro")
+	}
+	if tur.RemoverNota("html", "GRR1") {
+		t.Error("remover duas vezes deveria devolver falso")
+	}
+}

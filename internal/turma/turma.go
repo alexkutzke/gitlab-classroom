@@ -498,3 +498,92 @@ func Busca(alunos []Aluno, termo string) []Aluno {
 	}
 	return out
 }
+
+// RegistrarNota lança ou substitui a nota de um aluno em um exercício.
+func (t *Turma) RegistrarNota(n Nota) *Nota {
+	n.GRR = NormalizarGRR(n.GRR)
+	if p, ok := t.Nota(n.Exercicio, n.GRR); ok {
+		*p = n
+		return p
+	}
+	t.Notas = append(t.Notas, n)
+	ordenarNotas(t.Notas)
+	p, _ := t.Nota(n.Exercicio, n.GRR)
+	return p
+}
+
+// RemoverNota apaga a nota de um aluno em um exercício.
+func (t *Turma) RemoverNota(exercicio, grr string) bool {
+	grr = NormalizarGRR(grr)
+	for i := range t.Notas {
+		if t.Notas[i].Exercicio == exercicio && t.Notas[i].GRR == grr {
+			t.Notas = append(t.Notas[:i], t.Notas[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// Resultado reúne as notas de um aluno e a média ponderada.
+type Resultado struct {
+	Aluno Aluno
+	// Notas traz o valor lançado por exercício. Exercício sem nota não
+	// aparece no mapa, o que é diferente de nota zero.
+	Notas map[string]float64
+	// Media é a média ponderada pelos pesos dos exercícios considerados.
+	Media float64
+	// Considerados são os exercícios que entraram no denominador.
+	Considerados []string
+	// Lancadas conta quantos desses já têm nota.
+	Lancadas int
+}
+
+// Resultados calcula a média de cada aluno sobre os exercícios informados.
+//
+// Um exercício entra no cálculo quando o prazo já venceu, com ou sem nota
+// lançada: quem não entregou tira zero, e ignorar esse caso inflaria a média
+// de quem faltou. Exercício com prazo em aberto fica de fora até vencer.
+//
+// Com somenteLancadas, o denominador tem só os exercícios já corrigidos, que
+// é a leitura útil no meio do semestre.
+func (t *Turma) Resultados(exercicios []Exercicio, somenteLancadas bool, hoje Data) []Resultado {
+	alunos := t.Ativos()
+	out := make([]Resultado, 0, len(alunos))
+
+	for _, a := range alunos {
+		r := Resultado{Aluno: a, Notas: map[string]float64{}}
+		soma, pesos := 0.0, 0.0
+
+		for _, e := range exercicios {
+			n, temNota := t.Nota(e.ID, a.GRR)
+			if temNota {
+				r.Notas[e.ID] = n.Valor
+			}
+			vencido := !hoje.IsZero() && !e.Prazo.Depois(hoje)
+			if somenteLancadas && !temNota {
+				continue
+			}
+			if !somenteLancadas && !temNota && !vencido {
+				continue
+			}
+			peso := e.Peso
+			if peso <= 0 {
+				peso = 1
+			}
+			valor := 0.0
+			if temNota {
+				valor = n.Valor
+				r.Lancadas++
+			}
+			soma += valor * peso
+			pesos += peso
+			r.Considerados = append(r.Considerados, e.ID)
+		}
+
+		if pesos > 0 {
+			r.Media = soma / pesos
+		}
+		out = append(out, r)
+	}
+	return out
+}

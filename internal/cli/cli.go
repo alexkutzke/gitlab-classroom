@@ -4,6 +4,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -44,6 +45,9 @@ func Executar() error {
 		cmdClonar(),
 		cmdAbrir(),
 		cmdStatus(),
+		cmdCorrigir(),
+		cmdNota(),
+		cmdNotas(),
 		cmdRelatorio(),
 		cmdToken(),
 	)
@@ -86,6 +90,9 @@ func cliente(c turma.Config) (gl.Cliente, error) {
 	}
 	return gl.Novo(c.Host, token)
 }
+
+// agora existe para os testes poderem congelar o relógio no futuro.
+var agora = time.Now
 
 func avisar(formato string, args ...any) {
 	fmt.Fprintf(os.Stderr, formato+"\n", args...)
