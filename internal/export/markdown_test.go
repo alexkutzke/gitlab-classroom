@@ -56,11 +56,36 @@ func TestMarkdownPorGRR(t *testing.T) {
 	if err := Markdown(&buf, turmaExemplo(), Opcoes{Identificacao: PorGRR}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(buf.String(), "Ana Souza") {
-		t.Errorf("com --identificacao grr o nome não deveria aparecer:\n%s", buf.String())
+	saida := buf.String()
+	if strings.Contains(saida, "Ana Souza") {
+		t.Errorf("com --identificacao grr o nome não deveria aparecer:\n%s", saida)
 	}
-	if !strings.Contains(buf.String(), "| GRR20259001 | ok |") {
-		t.Errorf("linha por GRR ausente:\n%s", buf.String())
+	if !strings.Contains(saida, "| GRR20259001 | ok |") {
+		t.Errorf("linha por GRR ausente:\n%s", saida)
+	}
+	if !strings.Contains(saida, "| GRR |") {
+		t.Errorf("a coluna deveria se chamar GRR:\n%s", saida)
+	}
+	if !strings.Contains(saida, "alexkutzke") {
+		t.Errorf("a tabela publicada deveria dizer como corrigir o grupo:\n%s", saida)
+	}
+}
+
+func TestMarkdownPorGRROrdenaPorGRR(t *testing.T) {
+	tur := turmaExemplo()
+	// Bruno vem antes de Ana por GRR e depois por nome: a ordem escolhida
+	// muda conforme a identificação.
+	tur.Alunos[0].GRR, tur.Alunos[1].GRR = "GRR20259002", "GRR20259001"
+	tur.Entregas = nil
+
+	var buf bytes.Buffer
+	if err := Markdown(&buf, tur, Opcoes{Identificacao: PorGRR}); err != nil {
+		t.Fatal(err)
+	}
+	primeiro := strings.Index(buf.String(), "GRR20259001")
+	segundo := strings.Index(buf.String(), "GRR20259002")
+	if primeiro > segundo {
+		t.Errorf("linhas não saíram em ordem de GRR:\n%s", buf.String())
 	}
 }
 

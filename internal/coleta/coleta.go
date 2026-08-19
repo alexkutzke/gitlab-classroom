@@ -141,19 +141,24 @@ func (c *Coletor) executar(alunos []turma.Aluno, exercicios []turma.Exercicio) (
 
 // resolverGrupo procura o grupo do aluno e classifica o que foi encontrado.
 //
-// A ordem das tentativas é: o grupo já gravado (que pode ter sido corrigido à
-// mão), o nome do padrão, e por último a lista de grupos do professor, que é
-// onde aparece quem batizou o grupo de outro jeito.
+// A ordem das tentativas é: o grupo já gravado (que pode ter sido fixado à
+// mão), o nome do padrão com o GRR, o nome do padrão com o usuário cadastrado
+// (que difere do GRR quando o aluno não conseguiu criar a conta com ele), e
+// por último a lista de grupos do professor, que é onde aparece quem batizou
+// o grupo de outro jeito.
 func (c *Coletor) resolverGrupo(a turma.Aluno) (string, turma.SituacaoConta) {
-	candidatos := []string{}
+	esperados := c.esperados(a)
+
+	var candidatos []string
 	if a.Grupo != "" {
 		candidatos = append(candidatos, a.Grupo)
 	}
-	if esperado := c.Config.CaminhoGrupo(a.GRR); esperado != "" && esperado != a.Grupo {
-		candidatos = append(candidatos, esperado)
+	for _, e := range esperados {
+		if e != "" && e != a.Grupo {
+			candidatos = append(candidatos, e)
+		}
 	}
 
-	esperado := c.Config.CaminhoGrupo(a.GRR)
 	for _, cand := range candidatos {
 		g, err := c.Cliente.Grupo(cand)
 		if err != nil || g == nil {
@@ -162,27 +167,50 @@ func (c *Coletor) resolverGrupo(a turma.Aluno) (string, turma.SituacaoConta) {
 		if !g.Membro {
 			return g.Caminho, turma.ContaSemAcesso
 		}
-		if g.Caminho != esperado {
+		if !contem(esperados, g.Caminho) {
 			return g.Caminho, turma.ContaGrupoDivergente
 		}
 		return g.Caminho, turma.ContaOK
 	}
 
-	// Grupo com nome fora do padrão: procura pelo GRR entre os grupos em que
-	// o professor foi associado.
+	// Grupo com nome fora do padrão: procura entre os grupos em que o
+	// professor foi associado, tanto pelo GRR quanto pelo usuário cadastrado.
 	if grupos, err := c.Cliente.GruposDoProfessor(); err == nil {
-		login := turma.UsuarioGitLab(a.GRR)
+		chaves := []string{turma.UsuarioGitLab(a.GRR), turma.UsuarioGitLab(a.UsuarioEsperado())}
 		for _, g := range grupos {
-			if strings.Contains(strings.ToLower(g.Caminho), login) {
-				return g.Caminho, turma.ContaGrupoDivergente
+			caminho := strings.ToLower(g.Caminho)
+			for _, k := range chaves {
+				if k != "" && strings.Contains(caminho, k) {
+					return g.Caminho, turma.ContaGrupoDivergente
+				}
 			}
 		}
 	}
 
-	if existe, err := c.Cliente.UsuarioExiste(turma.UsuarioGitLab(a.GRR)); err == nil && !existe {
+	if existe, err := c.Cliente.UsuarioExiste(a.UsuarioEsperado()); err == nil && !existe {
 		return "", turma.ContaSemUsuario
 	}
 	return "", turma.ContaGrupoInvisivel
+}
+
+// esperados devolve os nomes de grupo aceitos como dentro do padrão para o
+// aluno. São dois quando o usuário cadastrado difere do GRR: o aluno que
+// precisou de outro login pode ter batizado o grupo com qualquer um dos dois.
+func (c *Coletor) esperados(a turma.Aluno) []string {
+	out := []string{c.Config.CaminhoGrupo(a.GRR)}
+	if u := a.UsuarioEsperado(); turma.UsuarioGitLab(u) != turma.UsuarioGitLab(a.GRR) {
+		out = append(out, c.Config.CaminhoGrupo(u))
+	}
+	return out
+}
+
+func contem(lista []string, valor string) bool {
+	for _, v := range lista {
+		if v == valor {
+			return true
+		}
+	}
+	return false
 }
 
 // coletarAluno apura a entrega do aluno em cada exercício.

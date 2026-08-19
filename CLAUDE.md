@@ -136,11 +136,34 @@ Os das fases 2 a 4 ainda não existem e estão marcados como tal.
 | `classroom coletar` | percorre alunos e exercícios e classifica a entrega |
 | `classroom status` | panorama: cadastro pendente e situação de cada exercício |
 | `classroom alunos` | o cadastro, com grupo e situação da conta |
-| `classroom relatorio` | tabela de entregas em markdown, para publicar no material |
+| `classroom alunos editar` | fixa o login ou o grupo de um aluno específico |
+| `classroom relatorio` | tabela de entregas em markdown, para o professor ou para o material |
 | `classroom clonar` | (fase 2) baixa os forks para corrigir |
 | `classroom corrigir` | (fase 3) interface interativa de correção |
 | `classroom notas` | (fase 3) planilha de notas por exercício e média |
 | `classroom verificar` | (fase 4) roda a suíte do exercício sobre os clones |
+
+## Dois requisitos que a fase 1 já atende
+
+**Relatório publicável.** `classroom relatorio --identificacao grr` produz a
+tabela que vai para o material da disciplina: uma linha por aluno identificada
+só pelo GRR, uma coluna por exercício, ordenada por GRR. A ordenação por nome
+foi descartada de propósito na versão publicada, porque a posição na lista
+denunciaria quem é quem. A saída termina com a instrução de conferir o nome do
+grupo e a associação do professor, que é o que o aluno tem a fazer quando a
+linha dele acusa `sem grupo`. O destino habitual é `src/` do mdBook, e o
+arquivo precisa entrar no `src/SUMMARY.md` para aparecer no livro.
+
+**Login fora da convenção.** O GRR em minúsculas é a convenção, não uma
+garantia: alguns alunos não conseguem criar a conta com ele. A coluna `usuario`
+de `alunos.csv` guarda o login real, e `classroom alunos editar --grr X
+--usuario Y` a preenche. A partir daí a resolução do grupo tenta o padrão com
+o GRR e o padrão com o login, a busca entre os grupos do professor procura os
+dois, e a checagem de existência da conta usa o login. `--grupo` fixa um
+caminho que ganha de tudo isso, para o grupo com nome que a busca não alcança.
+
+Mudar login ou grupo zera a situação da conta: o que tinha sido apurado antes
+deixa de valer e o próximo `sync` confere de novo.
 
 ## Classificação da entrega
 

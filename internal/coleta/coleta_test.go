@@ -317,3 +317,87 @@ func TestColetaDeVariosAlunosEmParalelo(t *testing.T) {
 		}
 	}
 }
+
+func TestAlunoComUsuarioDiferenteDoGRR(t *testing.T) {
+	// O aluno não conseguiu criar a conta com o GRR e usou outro login; o
+	// grupo seguiu o padrão, mas com esse login no lugar do GRR.
+	grupo := "ds122-2026-2-n-ana.souza"
+	g := gl.Grupo{ID: 3, Caminho: grupo, Membro: true}
+	c := baseFalsa()
+	c.usuarios = []string{"ana.souza"}
+	c.grupos = map[string]gl.Grupo{grupo: g}
+	c.meus = []gl.Grupo{g}
+	c.projetos = map[string][]gl.Projeto{grupo: {{
+		ID: 12, Caminho: "ds122-html-assignment", Completo: grupo + "/ds122-html-assignment",
+		RamoPadrao: "main",
+	}}}
+	c.commits[grupo+"/ds122-html-assignment"] = []gl.Commit{
+		{SHA: "aluno1", Data: time.Date(2026, 9, 1, 10, 0, 0, 0, time.Local)},
+	}
+
+	aluna := ana()
+	aluna.Usuario = "ana.souza"
+
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar([]turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Alunos[0].SituacaoConta != turma.ContaOK {
+		t.Errorf("conta = %v, queria ok: o grupo segue o padrão com o usuário cadastrado",
+			res.Alunos[0].SituacaoConta)
+	}
+	if res.Entregas[0].Situacao != turma.Entregue {
+		t.Errorf("entrega = %+v, queria entregue", res.Entregas[0])
+	}
+}
+
+func TestGrupoFixadoAMaoTemPrioridade(t *testing.T) {
+	grupo := "outro-nome-qualquer"
+	g := gl.Grupo{ID: 4, Caminho: grupo, Membro: true}
+	c := baseFalsa()
+	c.grupos = map[string]gl.Grupo{grupo: g}
+	c.meus = []gl.Grupo{g}
+	c.projetos = map[string][]gl.Projeto{grupo: {{
+		ID: 13, Caminho: "ds122-html-assignment", Completo: grupo + "/ds122-html-assignment",
+		RamoPadrao: "main",
+	}}}
+	c.commits[grupo+"/ds122-html-assignment"] = []gl.Commit{
+		{SHA: "aluno1", Data: time.Date(2026, 9, 1, 10, 0, 0, 0, time.Local)},
+	}
+
+	aluna := ana()
+	aluna.Grupo = grupo
+
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar([]turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Alunos[0].SituacaoConta != turma.ContaGrupoDivergente {
+		t.Errorf("conta = %v, queria grupo_divergente", res.Alunos[0].SituacaoConta)
+	}
+	if res.Entregas[0].Situacao != turma.Entregue {
+		t.Errorf("o grupo fixado à mão deveria ser usado: %+v", res.Entregas[0])
+	}
+}
+
+func TestUsuarioCadastradoEUsadoNaChecagemDeConta(t *testing.T) {
+	c := baseFalsa()
+	c.grupos = nil
+	c.meus = nil
+	c.usuarios = []string{"grr20259001"} // o GRR existe, o login cadastrado não
+
+	aluna := ana()
+	aluna.Usuario = "ana.souza"
+
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar([]turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Entregas[0].Situacao != turma.SemConta {
+		t.Errorf("situação = %v, queria sem_conta: a checagem usa o login cadastrado",
+			res.Entregas[0].Situacao)
+	}
+}

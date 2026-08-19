@@ -131,17 +131,50 @@ classroom alunos              # o cadastro, com grupo e situação da conta
 classroom alunos silva        # busca por nome, GRR ou e-mail
 ```
 
+### Aluno com login fora da convenção
+
+O login de cada aluno no GitLab é o GRR em minúsculas, e o grupo segue o
+padrão do `config.toml`. Para as exceções, o aluno que não conseguiu criar a
+conta com o GRR e usou outro nome, ou que batizou o grupo de um jeito que a
+busca não acha:
+
+```bash
+classroom alunos editar --grr GRR20259001 --usuario ana.souza
+classroom alunos editar --grr GRR20259001 --grupo ds122-noturno-ana \
+                        --obs "GitLab recusou o cadastro com o GRR"
+```
+
+Com o login cadastrado, a coleta passa a procurar o grupo pelos dois nomes, o
+do padrão com o GRR e o do padrão com o login, e a checagem de conta usa o
+login. O grupo fixado com `--grupo` tem prioridade sobre os dois.
+
+Nome, e-mail e situação não se editam por aqui: vêm do SIGA e voltariam no
+próximo `sync`.
+
 ### Gerar a tabela de entregas
+
+Duas saídas do mesmo comando, para públicos diferentes.
+
+Para o professor, com o nome dos alunos:
 
 ```bash
 classroom relatorio
-classroom relatorio -o ../ds122-alexkutzke/src/entregas.md
-classroom relatorio --identificacao grr
 ```
 
-Uma linha por aluno, uma coluna por exercício, no formato markdown que era
-publicado no material da disciplina. A tabela leva o nome dos alunos; para
-material publicado, `--identificacao grr`.
+Para publicar no material da disciplina, identificada por GRR e ordenada por
+GRR:
+
+```bash
+classroom relatorio --identificacao grr -o ../ds122-alexkutzke/src/entregas.md
+```
+
+A versão publicada não leva nome nenhum, sai em ordem de GRR (ordenar por nome
+mostrando o GRR deixaria a posição na lista denunciando quem é quem) e fecha
+com a instrução de conferir o nome do grupo e a associação do professor, que é
+o que o aluno precisa fazer quando a linha dele diz `sem grupo`.
+
+O arquivo novo em `src/` só aparece no mdBook depois de entrar no
+`src/SUMMARY.md`.
 
 ## Onde ficam os dados
 

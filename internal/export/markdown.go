@@ -5,6 +5,7 @@ package export
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -83,7 +84,11 @@ func Markdown(w io.Writer, t *turma.Turma, o Opcoes) error {
 		return nil
 	}
 
-	cabecalho := []string{"Aluno"}
+	primeira := "Aluno"
+	if o.Identificacao == PorGRR {
+		primeira = "GRR"
+	}
+	cabecalho := []string{primeira}
 	separador := []string{"---"}
 	for _, e := range exs {
 		titulo := e.ID
@@ -101,7 +106,7 @@ func Markdown(w io.Writer, t *turma.Turma, o Opcoes) error {
 		entregas[e.ID] = t.EntregasDoExercicio(e.ID)
 	}
 
-	for _, a := range t.Ativos() {
+	for _, a := range alunosDaTabela(t, o.Identificacao) {
 		linha := []string{identificar(a, o.Identificacao)}
 		for _, e := range exs {
 			en, ok := entregas[e.ID][a.GRR]
@@ -114,7 +119,28 @@ func Markdown(w io.Writer, t *turma.Turma, o Opcoes) error {
 	fmt.Fprintln(w, "Legenda: `ok` entregue no prazo; `fora do prazo` só há commits depois da data;")
 	fmt.Fprintln(w, "`sem commit` fork criado sem trabalho do aluno; `sem fork` a tarefa não foi bifurcada;")
 	fmt.Fprintln(w, "`sem grupo` o grupo não foi criado ou o professor não foi adicionado como reporter.")
+
+	if o.Identificacao == PorGRR {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Se a sua linha mostra `sem grupo`, confira em **Settings > General** se o\n"+
+			"grupo se chama `%s` e se `alexkutzke` consta em **Members** como `reporter`.\n",
+			t.Config.CaminhoGrupo("grrXXXXXXXX"))
+	}
 	return nil
+}
+
+// alunosDaTabela ordena as linhas conforme a identificação escolhida.
+//
+// A tabela publicada é por GRR e sai ordenada por GRR: manter a ordem
+// alfabética de nome deixaria a posição na lista revelando quem é quem.
+func alunosDaTabela(t *turma.Turma, i Identificacao) []turma.Aluno {
+	alunos := t.Ativos()
+	if i != PorGRR {
+		return alunos
+	}
+	ordenados := append([]turma.Aluno(nil), alunos...)
+	sort.SliceStable(ordenados, func(a, b int) bool { return ordenados[a].GRR < ordenados[b].GRR })
+	return ordenados
 }
 
 func identificar(a turma.Aluno, i Identificacao) string {
