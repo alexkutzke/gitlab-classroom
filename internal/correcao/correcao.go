@@ -32,6 +32,9 @@ var (
 type Item struct {
 	Aluno   turma.Aluno
 	Entrega turma.Entrega
+	// Verificacao é o resultado da suíte automatizada, quando o exercício
+	// tem uma. Situação vazia significa que não foi verificado.
+	Verificacao turma.Verificacao
 	// Dir é o clone local. Vazio ou inexistente desabilita a abertura no
 	// editor.
 	Dir string

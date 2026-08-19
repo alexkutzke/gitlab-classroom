@@ -42,7 +42,7 @@ func cmdExercicios() *cobra.Command {
 }
 
 func cmdExerciciosAdd() *cobra.Command {
-	var id, repo, titulo, prazo, verificacao string
+	var id, repo, titulo, prazo, verificacao, imagem string
 	var peso float64
 
 	c := &cobra.Command{
@@ -71,7 +71,7 @@ func cmdExerciciosAdd() *cobra.Command {
 			}
 			e := turma.Exercicio{
 				ID: id, Repo: repo, Titulo: titulo, Prazo: p, Peso: peso,
-				Verificacao: verificacao, Situacao: turma.ExercicioAtivo,
+				Verificacao: verificacao, Imagem: imagem, Situacao: turma.ExercicioAtivo,
 			}
 			if err := e.Validar(); err != nil {
 				return err
@@ -91,13 +91,14 @@ func cmdExerciciosAdd() *cobra.Command {
 	c.Flags().StringVar(&prazo, "prazo", "", "data de entrega, em AAAA-MM-DD")
 	c.Flags().Float64Var(&peso, "peso", 1, "peso do exercício na média")
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada, relativo à raiz do repositório")
+	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
 	c.MarkFlagRequired("repo")
 	c.MarkFlagRequired("prazo")
 	return c
 }
 
 func cmdExerciciosEditar() *cobra.Command {
-	var id, repo, titulo, prazo, verificacao string
+	var id, repo, titulo, prazo, verificacao, imagem string
 	var peso float64
 
 	c := &cobra.Command{
@@ -126,6 +127,9 @@ func cmdExerciciosEditar() *cobra.Command {
 			if cmd.Flags().Changed("verificacao") {
 				e.Verificacao = verificacao
 			}
+			if cmd.Flags().Changed("imagem") {
+				e.Imagem = imagem
+			}
 			if cmd.Flags().Changed("prazo") {
 				p, err := turma.ParseData(prazo)
 				if err != nil {
@@ -150,6 +154,7 @@ func cmdExerciciosEditar() *cobra.Command {
 	c.Flags().StringVar(&prazo, "prazo", "", "data de entrega, em AAAA-MM-DD")
 	c.Flags().Float64Var(&peso, "peso", 1, "peso do exercício na média")
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada")
+	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
 	c.MarkFlagRequired("id")
 	return c
 }

@@ -73,7 +73,8 @@ ds122_n/
     ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao
     ├── exercicios.csv       # id;repo;titulo;prazo;peso;verificacao;situacao
     ├── entregas.csv         # estado coletado do GitLab
-    └── notas.csv            # exercicio;grr;nota;comentario;corrigido_em
+    ├── notas.csv            # exercicio;grr;nota;comentario;corrigido_em
+    └── verificacoes.csv     # exercicio;grr;situacao;aprovados;total;commit;...
 ```
 
 Os clones ficam fora do `.classroom/`, em pasta configurável
@@ -81,8 +82,13 @@ Os clones ficam fora do `.classroom/`, em pasta configurável
 descartáveis.
 
 Regra que não pode ser quebrada: **a coleta regrava `entregas.csv` por
-inteiro e nunca toca em `notas.csv`**. Um é o que o GitLab diz, o outro é o
-que o professor decidiu. Foi para isso que os dois arquivos existem separados.
+inteiro e nunca toca em `notas.csv` nem em `verificacoes.csv`**. Um é o que o
+GitLab diz, o segundo é o que o professor decidiu, o terceiro é o que a suíte
+apurou. Foi para isso que os três arquivos existem separados.
+
+`verificacoes.csv` guarda o commit verificado. Quando ele difere do commit da
+entrega corrente, o resultado está velho, e a tela de correção marca isso com
+`!` em vez de fingir que o veredito ainda vale.
 
 ### Cadastro
 
@@ -125,8 +131,6 @@ resolve.
 
 ## Comandos
 
-Os das fases 2 a 4 ainda não existem e estão marcados como tal.
-
 | Comando | Papel |
 |---|---|
 | `classroom init` | cria o `.classroom/`, importa o cadastro e a configuração do `.diario/` |
@@ -138,12 +142,16 @@ Os das fases 2 a 4 ainda não existem e estão marcados como tal.
 | `classroom alunos` | o cadastro, com grupo e situação da conta |
 | `classroom alunos editar` | fixa o login ou o grupo de um aluno específico |
 | `classroom relatorio` | tabela de entregas em markdown, para o professor ou para o material |
-| `classroom clonar` | (fase 2) baixa os forks para corrigir |
-| `classroom corrigir` | (fase 3) interface interativa de correção |
-| `classroom notas` | (fase 3) planilha de notas por exercício e média |
-| `classroom verificar` | (fase 4) roda a suíte do exercício sobre os clones |
+| `classroom clonar` | baixa os forks e posiciona cada clone no commit avaliado |
+| `classroom abrir` | abre o clone no editor, ou o projeto no navegador |
+| `classroom verificar` | roda a suíte do exercício sobre os clones, em contêiner |
+| `classroom corrigir` | interface interativa de correção |
+| `classroom nota` | lança ou apaga uma nota isolada |
+| `classroom notas` | planilha de notas por exercício e média |
 
-## Dois requisitos que a fase 1 já atende
+## Dois requisitos de origem
+
+Pedidos do professor depois do plano inicial, ambos já no código.
 
 **Relatório publicável.** `classroom relatorio --identificacao grr` produz a
 tabela que vai para o material da disciplina: uma linha por aluno identificada
@@ -203,18 +211,28 @@ Regras:
 ## Verificação automática
 
 Opcional por exercício, porque nem todo enunciado é testável. A coluna
-`verificacao` de `exercicios.csv` aponta um comando do repositório-modelo
-(por exemplo `verifica/run.sh`); vazia, o exercício é corrigido só à mão e o
-relatório o mostra como `nao_avaliavel` na coluna de verificação, sem
-prejudicar a nota.
+`verificacao` de `exercicios.csv` guarda o comando, executado com a raiz do
+repositório como diretório de trabalho; vazia, o exercício é corrigido só à
+mão e a verificação sai como `sem_suite`, sem prejuízo nenhum.
 
-Executar código de aluno é o ponto de risco desta aplicação. O padrão é rodar
-em contêiner (`podman`, presente na máquina) com rede desligada, sistema de
-arquivos somente leitura fora do diretório de trabalho, limite de tempo e de
-memória. `--sem-sandbox` existe, exige confirmação e não é o padrão.
+A coluna `imagem` diz em que contêiner a suíte roda; vazia, vale
+`imagem_verificacao` do `config.toml`.
 
-Saída completa em `entregas/<exercicio>/<grr>/.verificacao.log`; no CSV entra
-apenas o resumo (aprovados, total, tempo).
+Executar código de aluno é o ponto de risco desta aplicação. O padrão é
+`podman run` (ou `docker`, na falta dele) com `--network=none`, o clone
+montado `ro`, `--security-opt=no-new-privileges`, `--memory`, `--pids-limit`,
+`--cpus=1`, `/tmp` em tmpfs e tempo limite. `--escrita` troca a montagem para
+`rw`; `--sem-sandbox` roda direto na máquina e exige um `sim` digitado, ou
+`--sim` fora de terminal.
+
+Contagem de casos: a suíte pode imprimir `RESULTADO: 7/10`, e a última
+ocorrência é a que vale. Sem essa linha, decide o código de saída. Os códigos
+125, 126 e 127 vindos do runtime viram `erro`, e não `reprovado`: significam
+que o contêiner nem chegou a executar a suíte, o que é problema do exercício e
+não do aluno.
+
+Saída completa em `entregas/<exercicio>/.logs/<grr>.log`. No CSV entra o
+resumo: veredito, aprovados, total, commit verificado e duração.
 
 Este item liga o plano de ensino ao código: quem declara uso de IA generativa
 no trabalho prático é avaliado por suíte automatizada com teto de nota
@@ -223,25 +241,36 @@ reduzido. Antes de mexer nos pesos, conferir o valor vigente no
 
 ## Interface de correção
 
-Espelha a `chamada` do `diario`: lista de alunos, cursor, filtro por nome,
-gravação ao sair. Diferenças próprias:
+`internal/correcao`, em Bubble Tea, no mesmo espírito da `chamada` do
+`diario`: lista, cursor, filtro por nome, gravação ao sair com `enter` e saída
+sem gravar com `q`.
 
-- Mostra a situação da entrega, o atraso e o resultado da verificação ao lado
-  do nome.
-- Abre o clone do aluno no `$EDITOR` ou no navegador (`xdg-open`) sem perder
-  o estado da correção.
-- Lança nota (escala configurável) e comentário. O comentário é o texto que
-  volta ao aluno, então precisa poder ser reaproveitado entre alunos.
-- Refazer a correção carrega o que já estava gravado, em vez de duplicar.
+O que é próprio daqui:
+
+- cada linha mostra a situação da entrega, o atraso e o resultado da suíte,
+  que é o contexto para decidir a nota;
+- dígito começa a lançar a nota direto, sem passar por comando;
+- `r` repete a última nota lançada com o comentário dela, que encurta a
+  correção de uma turma inteira com o mesmo veredito;
+- `o` abre o clone no `$EDITOR` via `tea.ExecProcess`, devolvendo o terminal à
+  interface quando o editor fecha;
+- só o que mudou na sessão é gravado, e nota apagada vira remoção explícita no
+  arquivo.
+
+O comentário é o texto devolvido ao aluno. Comentário sem nota não é gravado,
+e a interface avisa isso em vez de perder o que foi digitado.
 
 ## Fases de implementação
 
-1. **Feita.** `store`, modelo, `init`, `sync`, `exercicios`, `token`,
-   `coletar` só por API, `status`, `alunos` e `relatorio` em markdown. Os
-   scripts em `old/` estão substituídos.
-2. Clone e `fetch` paralelos, tag de entrega, abertura do repositório local.
-3. `corrigir`, uso do `notas.csv` e exportação da planilha.
-4. `verificar` com sandbox.
+As quatro estão feitas.
+
+1. `store`, modelo, `init`, `sync`, `exercicios`, `token`, `coletar` por API,
+   `status`, `alunos` e `relatorio` em markdown. Substituiu os scripts de `old/`.
+2. `clonar` e `abrir`: clone e `fetch` paralelos, clone posicionado no commit
+   avaliado sob o ramo local `entrega/<exercicio>`.
+3. `corrigir`, `nota` e `notas`: correção interativa, comentário devolvido ao
+   aluno e planilha com média ponderada.
+4. `verificar`: suíte automatizada em contêiner sem rede.
 
 Cada fase entra com teste. Seguir o padrão do `diario`: testes de tabela sobre
 os pacotes de domínio e de leitura de arquivo, com fixtures anonimizadas em

@@ -131,6 +131,101 @@ classroom alunos              # o cadastro, com grupo e situação da conta
 classroom alunos silva        # busca por nome, GRR ou e-mail
 ```
 
+### Baixar os forks para corrigir
+
+```bash
+classroom clonar --exercicio html
+classroom clonar --exercicio html --so-entregues
+```
+
+Clona, ou atualiza se já existir, o fork de cada aluno e deixa o clone no
+commit avaliado, sob o ramo local `entrega/<exercicio>`. Um ramo, e não um
+checkout solto, porque HEAD destacado silencioso era o defeito do script
+antigo: quem abrisse a pasta depois não sabia em que ponto do histórico estava
+olhando.
+
+Os clones ficam em `entregas/<exercicio>/<grr>-<nome>/`, fora do
+`.classroom/`. A autenticação é por SSH, com a chave que o git já usa.
+
+```bash
+classroom abrir --exercicio html --grr GRR20259001          # no $EDITOR
+classroom abrir --exercicio html --grr GRR20259001 --web    # no GitLab
+```
+
+### Corrigir e lançar nota
+
+```bash
+classroom corrigir --exercicio html
+classroom corrigir --exercicio html --sem-nota
+```
+
+Abre a lista da turma com a situação apurada pela coleta, o resultado da
+verificação automática, se houver, e a nota já lançada. A escala vai de 0 até
+`nota_maxima` do `config.toml`, que o `init` deixa em 100.
+
+| Tecla | Ação |
+|---|---|
+| `j` `k` ou setas | move o cursor |
+| `0`-`9` | começa a digitar a nota do aluno sob o cursor |
+| `n` | edita a nota |
+| `c` | edita o comentário devolvido ao aluno |
+| `r` | repete a última nota lançada, com o comentário dela |
+| `x` | apaga a nota |
+| `o` | abre o clone no `$EDITOR` |
+| `/` | filtra por nome |
+| `enter` | grava |
+| `q` `esc` | sai sem gravar |
+
+Refazer a correção carrega o que estava gravado, em vez de duplicar. Para uma
+nota isolada, sem abrir a interface:
+
+```bash
+classroom nota --exercicio html --grr GRR20259001 --valor 90 --comentario "faltou o rodapé"
+classroom nota --exercicio html --grr GRR20259001 --remover
+```
+
+### Planilha de notas
+
+```bash
+classroom notas
+classroom notas --somente-lancadas
+classroom notas --csv -o -
+```
+
+Uma coluna por exercício e a média ponderada pelos pesos. Exercício com prazo
+vencido e sem nota conta zero na média, porque quem não entregou tirou zero;
+exercício com prazo em aberto fica de fora até vencer. Com
+`--somente-lancadas`, a média considera apenas o que já foi corrigido, que é a
+leitura útil no meio do semestre. Célula vazia é exercício sem nota lançada,
+que continua sendo diferente de nota zero.
+
+### Verificação automática
+
+Opcional, e por exercício, porque nem todo enunciado é testável.
+
+```bash
+classroom exercicios editar --id html \
+    --verificacao './verifica.sh' --imagem docker.io/library/node:22-alpine
+classroom verificar --exercicio html
+classroom verificar --exercicio html --grr GRR20259001
+```
+
+O comando roda dentro do clone de cada aluno, em contêiner (`podman`, ou
+`docker` na falta dele) **sem rede**, com o repositório montado somente para
+leitura, `no-new-privileges`, teto de memória, de processos e de tempo. Rodar
+código de aluno é o ponto de risco desta ferramenta, e `--sem-sandbox` executa
+direto na máquina apenas depois de um `sim` digitado.
+
+A suíte informa quantos casos passaram imprimindo uma linha
+`RESULTADO: 7/10`; sem ela, vale o código de saída, onde zero aprova. A saída
+completa de cada execução fica em `entregas/<exercicio>/.logs/<grr>.log`, e no
+`verificacoes.csv` entra só o resumo, junto do commit verificado. Resultado
+apurado sobre um commit diferente do da entrega atual aparece marcado com `!`
+na tela de correção.
+
+Exercício sem suíte cadastrada fica como `sem_suite` e não sofre nada por
+isso: significa que a correção é toda à mão.
+
 ### Aluno com login fora da convenção
 
 O login de cada aluno no GitLab é o GRR em minúsculas, e o grupo segue o
@@ -189,8 +284,12 @@ ds122_n/
     ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao;situacao_conta;...
     ├── exercicios.csv       # id;repo;titulo;prazo;peso;verificacao;situacao
     ├── entregas.csv         # o que o GitLab diz
-    └── notas.csv            # o que o professor decidiu
+    ├── notas.csv            # o que o professor decidiu
+    └── verificacoes.csv     # o que a suíte automatizada apurou
 ```
+
+Os clones dos forks ficam fora do `.classroom/`, em
+`entregas/<exercicio>/<grr>-<nome>/`, porque são volumosos e descartáveis.
 
 Tudo é texto, editável à mão, gravado em ordem estável para o diff continuar
 legível a cada execução, e escrito de forma atômica para uma interrupção não
@@ -222,13 +321,14 @@ go install .
 | `internal/diario` | importação do cadastro mantido pela aplicação diario |
 | `internal/gitlab` | acesso à API, atrás de uma interface |
 | `internal/coleta` | percorre alunos e exercícios e classifica as entregas |
+| `internal/repo` | clones locais dos forks, com o git do sistema |
+| `internal/correcao` | interface interativa de correção (Bubble Tea) |
+| `internal/verificacao` | execução da suíte automatizada em contêiner |
 | `internal/relatorio` | saídas de terminal |
-| `internal/export` | tabela de entregas em markdown |
+| `internal/export` | tabela de entregas em markdown e planilha de notas |
 | `internal/cli` | árvore de comandos (Cobra) |
 
 Nenhum teste toca o gitlab.com: a camada de API fica atrás da interface
-`gitlab.Cliente`, dublada nos testes.
-
-O que ainda falta, na ordem prevista: clone e `fetch` paralelos dos forks,
-interface interativa de correção com lançamento de nota, e execução da suíte
-de verificação automática em contêiner. O plano completo está em `CLAUDE.md`.
+`gitlab.Cliente`, dublada nos testes. Os testes de clone usam repositórios
+locais criados na hora, e os de verificação rodam sem contêiner, para não
+depender de imagem baixada.

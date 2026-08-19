@@ -92,10 +92,16 @@ type Exercicio struct {
 	Peso   float64
 	// Verificacao é o comando da suíte automatizada, relativo à raiz do
 	// repositório. Vazio quando o exercício só é corrigido à mão, que é o
-	// caso da maioria.
+	// caso da maioria: nem todo enunciado é testável.
 	Verificacao string
-	Situacao    SituacaoExercicio
+	// Imagem é o contêiner onde a suíte roda. Vazio usa a imagem padrão da
+	// configuração.
+	Imagem   string
+	Situacao SituacaoExercicio
 }
+
+// TemSuite informa se o exercício tem verificação automatizada.
+func (e Exercicio) TemSuite() bool { return strings.TrimSpace(e.Verificacao) != "" }
 
 // EstaAtivo informa se o exercício entra nas coletas e relatórios correntes.
 func (e Exercicio) EstaAtivo() bool { return e.Situacao != ExercicioArquivado }
@@ -227,6 +233,62 @@ type Nota struct {
 	CorrigidoEm time.Time
 }
 
+// SituacaoVerificacao é o veredito da suíte automatizada.
+type SituacaoVerificacao string
+
+const (
+	Aprovado  SituacaoVerificacao = "aprovado"
+	Reprovado SituacaoVerificacao = "reprovado"
+	// SemSuite é exercício sem verificação cadastrada. Não prejudica nota:
+	// significa que a correção é toda à mão.
+	SemSuite SituacaoVerificacao = "sem_suite"
+	// SemClone é a suíte que não rodou porque o repositório não foi baixado.
+	SemClone SituacaoVerificacao = "sem_clone"
+	// ErroVerificacao é falha da execução em si, e não do trabalho do aluno:
+	// imagem ausente, tempo esgotado, contêiner que não subiu.
+	ErroVerificacao SituacaoVerificacao = "erro"
+)
+
+// Verificacao é o resultado de uma execução da suíte sobre o clone de um
+// aluno.
+//
+// Fica em arquivo próprio, e não junto da entrega, porque a coleta regrava as
+// entregas por inteiro e apagaria o resultado a cada recoleta.
+type Verificacao struct {
+	Exercicio string
+	GRR       string
+	Situacao  SituacaoVerificacao
+	Aprovados int
+	Total     int
+	// Commit é o que foi verificado. Quando difere do commit da entrega, o
+	// resultado está velho e o relatório precisa dizer isso.
+	Commit      string
+	Duracao     time.Duration
+	ExecutadoEm time.Time
+	Detalhe     string
+}
+
+// Resumo descreve o resultado em uma linha.
+func (v Verificacao) Resumo() string {
+	switch v.Situacao {
+	case Aprovado, Reprovado:
+		if v.Total > 0 {
+			return fmt.Sprintf("%s (%d/%d)", v.Situacao, v.Aprovados, v.Total)
+		}
+		return string(v.Situacao)
+	case ErroVerificacao:
+		if v.Detalhe != "" {
+			return "erro: " + v.Detalhe
+		}
+	}
+	return string(v.Situacao)
+}
+
+// Desatualizada informa se a verificação foi feita sobre outro commit.
+func (v Verificacao) Desatualizada(commitDaEntrega string) bool {
+	return v.Commit != "" && commitDaEntrega != "" && v.Commit != commitDaEntrega
+}
+
 // Config são os metadados da turma, persistidos em config.toml.
 type Config struct {
 	Codigo     string `toml:"codigo"`
@@ -245,8 +307,12 @@ type Config struct {
 	// turma.
 	PastaDiario string `toml:"pasta_diario"`
 
-	NotaMaxima  float64 `toml:"nota_maxima"`
-	Paralelismo int     `toml:"paralelismo"`
+	NotaMaxima float64 `toml:"nota_maxima"`
+	// ImagemVerificacao é o contêiner padrão das suítes automatizadas.
+	ImagemVerificacao string `toml:"imagem_verificacao"`
+	// TempoLimiteVerificacao é o teto de cada execução, em segundos.
+	TempoLimiteVerificacao int `toml:"tempo_limite_verificacao"`
+	Paralelismo            int `toml:"paralelismo"`
 	// TokenArquivo é o caminho de um arquivo com o token de acesso. Fica
 	// fora do .classroom/ de propósito.
 	TokenArquivo string `toml:"token_arquivo"`
@@ -309,6 +375,12 @@ func (c *Config) Padroes() {
 	if c.NotaMaxima <= 0 {
 		c.NotaMaxima = 100
 	}
+	if c.ImagemVerificacao == "" {
+		c.ImagemVerificacao = "docker.io/library/alpine:3.20"
+	}
+	if c.TempoLimiteVerificacao <= 0 {
+		c.TempoLimiteVerificacao = 120
+	}
 	if c.Paralelismo <= 0 {
 		c.Paralelismo = 8
 	}
@@ -316,11 +388,45 @@ func (c *Config) Padroes() {
 
 // Turma agrega a configuração e todos os registros.
 type Turma struct {
-	Config     Config
-	Alunos     []Aluno
-	Exercicios []Exercicio
-	Entregas   []Entrega
-	Notas      []Nota
+	Config       Config
+	Alunos       []Aluno
+	Exercicios   []Exercicio
+	Entregas     []Entrega
+	Notas        []Nota
+	Verificacoes []Verificacao
+}
+
+// Verificacao devolve o último resultado da suíte para um aluno.
+func (t *Turma) Verificacao(exercicio, grr string) (*Verificacao, bool) {
+	grr = NormalizarGRR(grr)
+	for i := range t.Verificacoes {
+		if t.Verificacoes[i].Exercicio == exercicio && t.Verificacoes[i].GRR == grr {
+			return &t.Verificacoes[i], true
+		}
+	}
+	return nil, false
+}
+
+// VerificacoesDoExercicio devolve os resultados de um exercício, por GRR.
+func (t *Turma) VerificacoesDoExercicio(exercicio string) map[string]Verificacao {
+	out := map[string]Verificacao{}
+	for _, v := range t.Verificacoes {
+		if v.Exercicio == exercicio {
+			out[v.GRR] = v
+		}
+	}
+	return out
+}
+
+// RegistrarVerificacao insere ou substitui o resultado de um aluno.
+func (t *Turma) RegistrarVerificacao(v Verificacao) {
+	v.GRR = NormalizarGRR(v.GRR)
+	if p, ok := t.Verificacao(v.Exercicio, v.GRR); ok {
+		*p = v
+		return
+	}
+	t.Verificacoes = append(t.Verificacoes, v)
+	ordenarVerificacoes(t.Verificacoes)
 }
 
 // AlunoPorGRR devolve o aluno com o GRR informado.
@@ -443,6 +549,16 @@ func (t *Turma) Ordenar() {
 	ordenarExercicios(t.Exercicios)
 	ordenarEntregas(t.Entregas)
 	ordenarNotas(t.Notas)
+	ordenarVerificacoes(t.Verificacoes)
+}
+
+func ordenarVerificacoes(vs []Verificacao) {
+	sort.SliceStable(vs, func(i, j int) bool {
+		if vs[i].Exercicio != vs[j].Exercicio {
+			return vs[i].Exercicio < vs[j].Exercicio
+		}
+		return vs[i].GRR < vs[j].GRR
+	})
 }
 
 func ordenarAlunos(as []Aluno) {

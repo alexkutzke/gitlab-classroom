@@ -100,6 +100,25 @@ func Resumo(w io.Writer, entregas map[string]turma.Entrega) {
 	}
 }
 
+// ResumoVerificacoes conta os vereditos da suíte automatizada.
+func ResumoVerificacoes(w io.Writer, vs map[string]turma.Verificacao) {
+	contagem := map[turma.SituacaoVerificacao]int{}
+	for _, v := range vs {
+		contagem[v.Situacao]++
+	}
+	var partes []string
+	for _, s := range []turma.SituacaoVerificacao{
+		turma.Aprovado, turma.Reprovado, turma.SemClone, turma.ErroVerificacao,
+	} {
+		if contagem[s] > 0 {
+			partes = append(partes, fmt.Sprintf("%d %s", contagem[s], s))
+		}
+	}
+	if len(partes) > 0 {
+		fmt.Fprintln(w, "verificação: "+strings.Join(partes, ", "))
+	}
+}
+
 // Status é o panorama da turma: quem está travado antes da entrega e como
 // anda cada exercício.
 func Status(w io.Writer, t *turma.Turma) {
@@ -143,8 +162,12 @@ func Status(w io.Writer, t *turma.Turma) {
 		fmt.Fprintf(w, "%s  %s  prazo %s\n  ", e.ID, e.Titulo, prazo)
 		if len(entregas) == 0 {
 			fmt.Fprintln(w, "sem coleta")
-			continue
+		} else {
+			Resumo(w, entregas)
 		}
-		Resumo(w, entregas)
+		if vs := t.VerificacoesDoExercicio(e.ID); len(vs) > 0 {
+			fmt.Fprint(w, "  ")
+			ResumoVerificacoes(w, vs)
+		}
 	}
 }

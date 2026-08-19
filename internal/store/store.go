@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -20,11 +21,12 @@ import (
 const Dir = ".classroom"
 
 const (
-	arqConfig     = "config.toml"
-	arqAlunos     = "alunos.csv"
-	arqExercicios = "exercicios.csv"
-	arqEntregas   = "entregas.csv"
-	arqNotas      = "notas.csv"
+	arqConfig       = "config.toml"
+	arqAlunos       = "alunos.csv"
+	arqExercicios   = "exercicios.csv"
+	arqEntregas     = "entregas.csv"
+	arqNotas        = "notas.csv"
+	arqVerificacoes = "verificacoes.csv"
 )
 
 // ErrNaoEncontrado indica que nenhum .classroom/ foi achado subindo a árvore.
@@ -94,6 +96,9 @@ func (s *Store) Carregar() (*turma.Turma, error) {
 	if t.Notas, err = s.lerNotas(); err != nil {
 		return nil, err
 	}
+	if t.Verificacoes, err = s.lerVerificacoes(); err != nil {
+		return nil, err
+	}
 	t.Ordenar()
 	return t, nil
 }
@@ -113,7 +118,10 @@ func (s *Store) Gravar(t *turma.Turma) error {
 	if err := s.gravarEntregas(t.Entregas); err != nil {
 		return err
 	}
-	return s.gravarNotas(t.Notas)
+	if err := s.gravarNotas(t.Notas); err != nil {
+		return err
+	}
+	return s.gravarVerificacoes(t.Verificacoes)
 }
 
 // GravarConfig escreve apenas o config.toml.
@@ -178,7 +186,7 @@ func (s *Store) gravarAlunos(as []turma.Aluno) error {
 
 // --- exercícios ---
 
-var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "verificacao", "situacao"}
+var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "verificacao", "imagem", "situacao"}
 
 func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 	t, err := lerTabela(s.caminho(arqExercicios), cabecalhoExercicios, "id")
@@ -206,6 +214,7 @@ func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 			Prazo:       prazo,
 			Peso:        peso,
 			Verificacao: t.str(i, "verificacao"),
+			Imagem:      t.str(i, "imagem"),
 			Situacao:    sit,
 		}
 		if err := e.Validar(); err != nil {
@@ -221,7 +230,7 @@ func (s *Store) gravarExercicios(es []turma.Exercicio) error {
 	for _, e := range es {
 		linhas = append(linhas, []string{
 			e.ID, e.Repo, e.Titulo, e.Prazo.String(), formatarDecimal(e.Peso),
-			e.Verificacao, string(e.Situacao),
+			e.Verificacao, e.Imagem, string(e.Situacao),
 		})
 	}
 	return gravarCSV(s.caminho(arqExercicios), linhas)
@@ -332,6 +341,64 @@ func (s *Store) gravarNotas(ns []turma.Nota) error {
 		})
 	}
 	return gravarCSV(s.caminho(arqNotas), linhas)
+}
+
+// --- verificações ---
+
+var cabecalhoVerificacoes = []string{
+	"exercicio", "grr", "situacao", "aprovados", "total", "commit",
+	"duracao_ms", "executado_em", "detalhe",
+}
+
+func (s *Store) lerVerificacoes() ([]turma.Verificacao, error) {
+	t, err := lerTabela(s.caminho(arqVerificacoes), cabecalhoVerificacoes, "exercicio")
+	if err != nil {
+		return nil, err
+	}
+	var out []turma.Verificacao
+	for i := range t.linhas {
+		aprovados, err := t.inteiro(i, "aprovados", 0)
+		if err != nil {
+			return nil, err
+		}
+		total, err := t.inteiro(i, "total", 0)
+		if err != nil {
+			return nil, err
+		}
+		ms, err := t.inteiro(i, "duracao_ms", 0)
+		if err != nil {
+			return nil, err
+		}
+		quando, err := t.instante(i, "executado_em")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, turma.Verificacao{
+			Exercicio:   t.str(i, "exercicio"),
+			GRR:         turma.NormalizarGRR(t.str(i, "grr")),
+			Situacao:    turma.SituacaoVerificacao(t.str(i, "situacao")),
+			Aprovados:   aprovados,
+			Total:       total,
+			Commit:      t.str(i, "commit"),
+			Duracao:     time.Duration(ms) * time.Millisecond,
+			ExecutadoEm: quando,
+			Detalhe:     t.str(i, "detalhe"),
+		})
+	}
+	return out, nil
+}
+
+func (s *Store) gravarVerificacoes(vs []turma.Verificacao) error {
+	linhas := [][]string{cabecalhoVerificacoes}
+	for _, v := range vs {
+		linhas = append(linhas, []string{
+			v.Exercicio, v.GRR, string(v.Situacao),
+			strconv.Itoa(v.Aprovados), strconv.Itoa(v.Total), v.Commit,
+			strconv.FormatInt(v.Duracao.Milliseconds(), 10),
+			turma.FormatarInstante(v.ExecutadoEm), v.Detalhe,
+		})
+	}
+	return gravarCSV(s.caminho(arqVerificacoes), linhas)
 }
 
 // --- utilidades de CSV ---

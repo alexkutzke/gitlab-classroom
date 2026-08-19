@@ -53,8 +53,8 @@ func (m *modelo) lista() string {
 			cursor = estCursor.Render("> ")
 			nome = estCursor.Render(nome)
 		}
-		b.WriteString(fmt.Sprintf("%s%-38s %-32s %s\n",
-			cursor, truncar(nome, 38), m.situacao(it), m.nota(it)))
+		b.WriteString(fmt.Sprintf("%s%-34s %-30s %-22s %s\n",
+			cursor, truncar(nome, 34), m.situacao(it), m.verificacao(it), m.nota(it)))
 	}
 	if fim < len(m.visivel) {
 		b.WriteString(estFraco.Render(fmt.Sprintf("  ... mais %d\n", len(m.visivel)-fim)))
@@ -78,6 +78,27 @@ func (m *modelo) situacao(it Item) string {
 		return estAtraso.Render(fmt.Sprintf("fora do prazo, +%dd", e.AtrasoDias))
 	default:
 		return estFalta.Render(e.Situacao.Rotulo())
+	}
+}
+
+// verificacao mostra o resultado da suíte, marcando com ! o que foi apurado
+// sobre um commit anterior ao da entrega atual.
+func (m *modelo) verificacao(it Item) string {
+	v := it.Verificacao
+	if v.Situacao == "" || v.Situacao == turma.SemSuite {
+		return ""
+	}
+	texto := v.Resumo()
+	if v.Desatualizada(it.Entrega.Commit) {
+		texto += " !"
+	}
+	switch v.Situacao {
+	case turma.Aprovado:
+		return estEntregue.Render(texto)
+	case turma.Reprovado:
+		return estFalta.Render(texto)
+	default:
+		return estFraco.Render(texto)
 	}
 }
 

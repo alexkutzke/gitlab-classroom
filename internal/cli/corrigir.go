@@ -39,6 +39,7 @@ func cmdCorrigir() *cobra.Command {
 			}
 
 			entregas := t.EntregasDoExercicio(e.ID)
+			verificacoes := t.VerificacoesDoExercicio(e.ID)
 			var itens []correcao.Item
 			for _, a := range t.Ativos() {
 				en := entregas[a.GRR]
@@ -46,9 +47,10 @@ func cmdCorrigir() *cobra.Command {
 					continue
 				}
 				item := correcao.Item{
-					Aluno:   a,
-					Entrega: en,
-					Dir:     repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, a),
+					Aluno:       a,
+					Entrega:     en,
+					Verificacao: verificacoes[a.GRR],
+					Dir:         repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, a),
 				}
 				if n, ok := t.Nota(e.ID, a.GRR); ok {
 					if semNota {
