@@ -121,41 +121,59 @@ trabalhadores configurável (padrão 8), repetição com espera crescente em
 `429`, e nada de uma requisição por aluno quando uma listagem paginada
 resolve.
 
-## Comandos previstos
+## Comandos
+
+Os das fases 2 a 4 ainda não existem e estão marcados como tal.
 
 | Comando | Papel |
 |---|---|
-| `classroom init` | cria o `.classroom/`, importa o cadastro do `.diario/` |
+| `classroom init` | cria o `.classroom/`, importa o cadastro e a configuração do `.diario/` |
 | `classroom sync` | reimporta o cadastro e reconcilia com o GitLab (grupo, associação, usuário) |
-| `classroom exercicios` | lista, adiciona e edita exercícios (repo-modelo, prazo, peso, verificação) |
-| `classroom coletar` | percorre alunos e exercícios, classifica a entrega, opcionalmente clona |
-| `classroom verificar` | roda a suíte do exercício sobre os clones e grava o resultado |
-| `classroom corrigir` | interface interativa de correção, lança nota e comentário |
-| `classroom status` | panorama: quem não criou grupo, quem não entregou, prazos próximos |
+| `classroom token` | diz de onde vem o token e testa a conexão, sem exibir o valor |
+| `classroom exercicios` | lista, adiciona, edita e arquiva exercícios |
+| `classroom coletar` | percorre alunos e exercícios e classifica a entrega |
+| `classroom status` | panorama: cadastro pendente e situação de cada exercício |
+| `classroom alunos` | o cadastro, com grupo e situação da conta |
 | `classroom relatorio` | tabela de entregas em markdown, para publicar no material |
-| `classroom notas` | planilha de notas por exercício e média |
+| `classroom clonar` | (fase 2) baixa os forks para corrigir |
+| `classroom corrigir` | (fase 3) interface interativa de correção |
+| `classroom notas` | (fase 3) planilha de notas por exercício e média |
+| `classroom verificar` | (fase 4) roda a suíte do exercício sobre os clones |
 
 ## Classificação da entrega
 
-Vocabulário fechado, gravado em `entregas.csv`:
+Vocabulário fechado, gravado em `entregas.csv` e definido em
+`internal/turma/turma.go`:
 
-`sem_grupo`, `sem_acesso`, `sem_fork`, `fork_sem_commit`, `entregue`,
-`entregue_com_atraso`, `nao_avaliavel`.
+`sem_conta`, `sem_acesso`, `grupo_invisivel`, `sem_fork`, `fork_sem_commit`,
+`sem_commit_no_prazo`, `entregue`, `erro`.
+
+Duas escolhas que valem manter:
+
+- `grupo_invisivel` cobre o caso genuinamente ambíguo. Grupo privado não
+  compartilhado e grupo inexistente devolvem o mesmo 404, e o rótulo diz isso
+  em vez de fingir que sabe qual dos dois é. O que dá para separar está
+  separado: `sem_conta` vem da consulta ao usuário, `sem_acesso` do grupo que
+  aparece sem o professor associado.
+- `erro` é falha de rede ou de API, e não veredito sobre o aluno. Recoletar
+  resolve, e por isso ele não se mistura às demais situações.
 
 Regras:
 
 - O prazo é uma data. Vale até 23h59min59s daquele dia, no fuso local.
-- A entrega é o commit mais recente até o prazo. Registrar também o último
-  commit absoluto e o atraso em dias, porque "não fez" e "fez depois" pedem
-  encaminhamentos diferentes.
-- Commit do aluno é o que não veio do repositório-modelo, apurado por
-  comparação com os commits do modelo (`git log modelo/main..HEAD`, ou o
-  ponto de bifurcação pela API). Não usar filtro por nome do autor: o script
-  antigo descartava commits com `grep -v Kutzke` e errava tanto com o aluno
-  que configurou o git com o nome errado quanto com o modelo que recebeu
-  commit de terceiro.
-- O clone da entrega não fica em `HEAD` destacado silencioso. Marcar o commit
-  da entrega com uma tag local `entrega/<exercicio>` e registrar o SHA no CSV.
+- A entrega é o commit mais recente até o prazo. O último commit absoluto e o
+  atraso em dias ficam registrados também, porque "não fez" e "fez depois"
+  pedem encaminhamentos diferentes.
+- Commit do aluno é o que não existe no repositório-modelo, apurado por
+  comparação de SHA. Não usar filtro por nome do autor: o script antigo
+  descartava commits com `grep -v Kutzke` e errava tanto com o aluno que
+  configurou o git com outro nome quanto com o modelo que recebeu commit de
+  terceiro.
+- Fork sem commit no ramo padrão é conferido de novo com todos os ramos antes
+  de virar `fork_sem_commit`, e o número de commits fora do ramo entra no
+  detalhe. Quem trabalhou numa branch não some do relatório.
+- O clone da entrega (fase 2) não pode ficar em `HEAD` destacado silencioso:
+  marcar o commit com uma tag local `entrega/<exercicio>` e registrar o SHA.
 
 ## Verificação automática
 
@@ -193,11 +211,11 @@ gravação ao sair. Diferenças próprias:
 
 ## Fases de implementação
 
-1. `store`, modelo, `init`, `sync`, `exercicios`, `coletar` só por API e
-   `relatorio` em markdown. Ao fim desta fase os scripts em `old/` estão
-   substituídos.
+1. **Feita.** `store`, modelo, `init`, `sync`, `exercicios`, `token`,
+   `coletar` só por API, `status`, `alunos` e `relatorio` em markdown. Os
+   scripts em `old/` estão substituídos.
 2. Clone e `fetch` paralelos, tag de entrega, abertura do repositório local.
-3. `corrigir`, `notas.csv` e exportação da planilha.
+3. `corrigir`, uso do `notas.csv` e exportação da planilha.
 4. `verificar` com sandbox.
 
 Cada fase entra com teste. Seguir o padrão do `diario`: testes de tabela sobre

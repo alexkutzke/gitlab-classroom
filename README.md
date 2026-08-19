@@ -42,7 +42,7 @@ classroom token    # diz de onde veio o token e testa a conexão
 Rode na pasta da turma, a mesma que já tem o `.diario/`:
 
 ```bash
-cd ~/…/2026-02/ds122/ds122_n
+cd ~/.../2026-02/ds122/ds122_n
 classroom init
 ```
 
@@ -153,7 +153,7 @@ ds122_n/
 ├── .diario/                 # do diario, fonte do cadastro de alunos
 └── .classroom/
     ├── config.toml          # turma, turno, padrão do grupo, namespace dos modelos
-    ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao;situacao_conta;…
+    ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao;situacao_conta;...
     ├── exercicios.csv       # id;repo;titulo;prazo;peso;verificacao;situacao
     ├── entregas.csv         # o que o GitLab diz
     └── notas.csv            # o que o professor decidiu
