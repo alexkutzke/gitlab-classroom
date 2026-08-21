@@ -82,7 +82,7 @@ func Runtime(preferido string) (string, error) {
 var reResultado = regexp.MustCompile(`(?i)RESULTADO:\s*(\d+)\s*/\s*(\d+)`)
 
 // Executar roda a suíte sobre todos os alvos, em paralelo.
-func Executar(alvos []Alvo, o Opcoes, paralelismo int, progresso func(feito, total int, a Alvo)) ([]turma.Verificacao, error) {
+func Executar(ctx context.Context, alvos []Alvo, o Opcoes, paralelismo int, progresso func(feito, total int, a Alvo)) ([]turma.Verificacao, error) {
 	o.padroes()
 	if !o.Exercicio.TemSuite() {
 		var out []turma.Verificacao
@@ -129,7 +129,10 @@ func Executar(alvos []Alvo, o Opcoes, paralelismo int, progresso func(feito, tot
 			defer wg.Done()
 			for i := range indices {
 				a := alvos[i]
-				v := executarUm(a, o, runtime)
+				if ctx.Err() != nil {
+					continue
+				}
+				v := executarUm(ctx, a, o, runtime)
 
 				mu.Lock()
 				out[i] = v
@@ -150,7 +153,7 @@ func Executar(alvos []Alvo, o Opcoes, paralelismo int, progresso func(feito, tot
 	return out, nil
 }
 
-func executarUm(a Alvo, o Opcoes, runtime string) turma.Verificacao {
+func executarUm(pai context.Context, a Alvo, o Opcoes, runtime string) turma.Verificacao {
 	v := turma.Verificacao{
 		Exercicio: o.Exercicio.ID, GRR: a.GRR, Commit: a.Commit,
 		ExecutadoEm: time.Now(),
@@ -164,7 +167,7 @@ func executarUm(a Alvo, o Opcoes, runtime string) turma.Verificacao {
 		return v
 	}
 
-	ctx, cancelar := context.WithTimeout(context.Background(), o.TempoLimite)
+	ctx, cancelar := context.WithTimeout(pai, o.TempoLimite)
 	defer cancelar()
 
 	var cmd *exec.Cmd

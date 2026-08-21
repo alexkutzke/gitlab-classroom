@@ -53,6 +53,8 @@ type App struct {
 	tarefas   telaTarefas
 	ajudaTela ajuda
 
+	tarefa *tarefa
+
 	largura, altura int
 	status          string
 	erro            string
@@ -160,12 +162,29 @@ func (a *App) linhasDisponiveis() int {
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, tratada := a.tratarTarefa(msg); tratada {
+		return a, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.largura, a.altura = msg.Width, msg.Height
 		return a, nil
 
 	case tea.KeyMsg:
+		// Enquanto uma operação de rede roda, só cancelar e sair valem: duas
+		// coletas ao mesmo tempo mexeriam na mesma turma.
+		if a.emCurso() {
+			switch msg.String() {
+			case "esc":
+				a.cancelarTarefa()
+			case "ctrl+c":
+				a.cancelarTarefa()
+				a.sair = true
+				return a, tea.Quit
+			}
+			return a, nil
+		}
 		// A tela corrente vê a tecla primeiro: um filtro sendo digitado
 		// precisa receber o "q" como letra, e não como pedido de saída.
 		if cmd, tratada := a.telaAtual(msg); tratada {
@@ -222,6 +241,10 @@ func (a *App) teclaGlobal(msg tea.KeyMsg) tea.Cmd {
 		a.ir(idTarefas)
 	case "r":
 		a.recarregarDoDisco()
+	case "S":
+		return a.sincronizar()
+	case "C":
+		return a.coletar(nil)
 	}
 	return nil
 }
@@ -282,6 +305,9 @@ func (a *App) corpo() string {
 }
 
 func (a *App) rodape() string {
+	if a.emCurso() {
+		return a.barraDeProgresso()
+	}
 	if a.erro != "" {
 		return estErro.Render("erro: " + truncar(a.erro, a.largura-8))
 	}

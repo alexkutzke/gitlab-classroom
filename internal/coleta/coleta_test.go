@@ -1,6 +1,7 @@
 package coleta
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -114,7 +115,7 @@ func baseFalsa() *clienteFalso {
 func coletarUm(t *testing.T, c *clienteFalso) turma.Entrega {
 	t.Helper()
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestGrupoComNomeForaDoPadraoAindaEncontraOFork(t *testing.T) {
 	}
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +241,7 @@ func TestGrupoVisivelSemOProfessorAssociado(t *testing.T) {
 	c.meus = nil
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +260,7 @@ func TestSemContaNoGitLab(t *testing.T) {
 	c.usuarios = nil
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +275,7 @@ func TestGrupoInvisivelQuandoAContaExisteMasOGrupoNao(t *testing.T) {
 	c.meus = nil
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +308,7 @@ func TestColetaDeVariosAlunosEmParalelo(t *testing.T) {
 		{GRR: "GRR20259003", Nome: "Carla Dias", Situacao: turma.Ativo},
 	}
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar(alunos, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), alunos, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +346,7 @@ func TestAlunoComUsuarioDiferenteDoGRR(t *testing.T) {
 	aluna.Usuario = "ana.souza"
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +377,7 @@ func TestGrupoFixadoAMaoTemPrioridade(t *testing.T) {
 	aluna.Grupo = grupo
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +399,7 @@ func TestUsuarioCadastradoEUsadoNaChecagemDeConta(t *testing.T) {
 	aluna.Usuario = "ana.souza"
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +448,7 @@ func duplaFalsa() *clienteFalso {
 func coletarDupla(t *testing.T, c *clienteFalso) Resultado {
 	t.Helper()
 	col := &Coletor{Cliente: c, Config: configExemplo()}
-	res, err := col.Coletar([]turma.Aluno{ana(), bruno()}, []turma.Exercicio{exercicioExemplo()})
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana(), bruno()}, []turma.Exercicio{exercicioExemplo()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package verificacao
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func rodar(t *testing.T, comando string, o Opcoes, alvos ...Alvo) []turma.Verifi
 	if o.TempoLimite == 0 {
 		o.TempoLimite = 10 * time.Second
 	}
-	res, err := Executar(alvos, o, 2, nil)
+	res, err := Executar(context.Background(), alvos, o, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestCloneAusente(t *testing.T) {
 }
 
 func TestExercicioSemSuite(t *testing.T) {
-	res, err := Executar(
+	res, err := Executar(context.Background(),
 		[]Alvo{{GRR: "GRR1", Dir: cloneFalso(t)}},
 		Opcoes{Exercicio: exercicioCom("")}, 1, nil)
 	if err != nil {

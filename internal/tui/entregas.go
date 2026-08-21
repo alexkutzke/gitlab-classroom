@@ -150,6 +150,24 @@ func (te *telaEntregas) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 		te.ordem = (te.ordem + 1) % 3
 		te.cursor = 0
 		a.avisar("ordenado por %s", te.ordem)
+	case "c":
+		e, ok := a.exercicioAberto()
+		if !ok {
+			return nil, true
+		}
+		return a.coletar([]turma.Exercicio{e}), true
+	case "l":
+		e, ok := a.exercicioAberto()
+		if !ok {
+			return nil, true
+		}
+		return a.clonar(e), true
+	case "v":
+		e, ok := a.exercicioAberto()
+		if !ok {
+			return nil, true
+		}
+		return a.verificar(e), true
 	case "o":
 		return te.abrirClone(a, linhas), true
 	case "w":
@@ -241,7 +259,7 @@ func linhaAtual(linhas []linhaEntrega, cursor int) (linhaEntrega, bool) {
 }
 
 func (te *telaEntregas) atalhos() string {
-	return "o abre no editor · w abre no GitLab · s ordem · / filtra"
+	return "c coleta · l clona · v verifica · o editor · w GitLab · s ordem · / filtra"
 }
 
 func (te *telaEntregas) desenhar(a *App) string {

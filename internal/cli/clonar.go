@@ -37,7 +37,7 @@ func cmdClonar() *cobra.Command {
 				return err
 			}
 
-			res, err := acoes.Clonar(t, s.Pasta(), exercicios,
+			res, err := acoes.Clonar(cmd.Context(), t, s.Pasta(), exercicios,
 				acoes.OpcoesClone{SoEntregues: soEntregues}, progressoTerminal())
 			if err != nil {
 				return err

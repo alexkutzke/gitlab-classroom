@@ -42,7 +42,7 @@ func cmdColetar() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := acoes.Coletar(t, cli, exercicios, progressoTerminal()); err != nil {
+			if _, err := acoes.Coletar(cmd.Context(), t, cli, exercicios, progressoTerminal()); err != nil {
 				return err
 			}
 			limparProgresso()

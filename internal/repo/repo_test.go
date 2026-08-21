@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -180,7 +181,7 @@ func TestSincronizarEmLote(t *testing.T) {
 	}
 
 	vistos := 0
-	res := Sincronizar(alvos, "https://gitlab.com", 3, func(feito, total int, a Alvo) {
+	res := Sincronizar(context.Background(), alvos, "https://gitlab.com", 3, func(feito, total int, a Alvo) {
 		vistos++
 	})
 	if len(res) != 3 || vistos != 3 {
@@ -201,7 +202,7 @@ func TestSincronizarEmLote(t *testing.T) {
 
 	// Segunda passada: os clones já existem e devem ser atualizados, não
 	// recriados.
-	res = Sincronizar(alvos, "https://gitlab.com", 3, nil)
+	res = Sincronizar(context.Background(), alvos, "https://gitlab.com", 3, nil)
 	for _, r := range res {
 		if r.Erro != nil {
 			t.Errorf("%s falhou na segunda passada: %v", r.GRR, r.Erro)
@@ -222,7 +223,7 @@ func TestSincronizarRegistraFalhaSemDerrubarOsDemais(t *testing.T) {
 		{Exercicio: "html", GRR: "grr2", Projeto: "grupo/grr2",
 			URL: filepath.Join(base, "nao-existe"), Dir: filepath.Join(base, "grr2")},
 	}
-	res := Sincronizar(alvos, "https://gitlab.com", 2, nil)
+	res := Sincronizar(context.Background(), alvos, "https://gitlab.com", 2, nil)
 
 	if res[0].Erro != nil {
 		t.Errorf("o alvo bom não deveria falhar: %v", res[0].Erro)

@@ -56,7 +56,7 @@ func cmdVerificar() *cobra.Command {
 				}
 			}
 
-			res, err := acoes.Verificar(t, s.Pasta(), *e, acoes.OpcoesVerificacao{
+			res, err := acoes.Verificar(cmd.Context(), t, s.Pasta(), *e, acoes.OpcoesVerificacao{
 				GRR:         grr,
 				Imagem:      imagem,
 				Runtime:     runtime,

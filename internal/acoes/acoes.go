@@ -8,6 +8,7 @@
 package acoes
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -122,7 +123,7 @@ type ResumoSync struct {
 
 // Sincronizar reimporta o cadastro do diario e reconcilia as contas com o
 // GitLab.
-func Sincronizar(t *turma.Turma, pastaTurma string, cli gl.Cliente, o OpcoesSync, prog AvisoProgresso) (ResumoSync, error) {
+func Sincronizar(ctx context.Context, t *turma.Turma, pastaTurma string, cli gl.Cliente, o OpcoesSync, prog AvisoProgresso) (ResumoSync, error) {
 	var res ResumoSync
 
 	if !o.SemDiario {
@@ -156,7 +157,7 @@ func Sincronizar(t *turma.Turma, pastaTurma string, cli gl.Cliente, o OpcoesSync
 			prog.avisar(feito, total, a.Nome)
 		},
 	}
-	atualizados, err := col.Reconciliar(ativos)
+	atualizados, err := col.Reconciliar(ctx, ativos)
 	if err != nil {
 		return res, err
 	}
@@ -197,7 +198,7 @@ type ResumoColeta struct {
 
 // Coletar percorre o GitLab e aplica na turma as entregas e os vínculos de
 // equipe de cada exercício informado.
-func Coletar(t *turma.Turma, cli gl.Cliente, exercicios []turma.Exercicio, prog AvisoProgresso) (ResumoColeta, error) {
+func Coletar(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios []turma.Exercicio, prog AvisoProgresso) (ResumoColeta, error) {
 	res := ResumoColeta{
 		Situacoes:      map[string]map[turma.SituacaoEntrega]int{},
 		Compartilhadas: map[string]int{},
@@ -217,7 +218,7 @@ func Coletar(t *turma.Turma, cli gl.Cliente, exercicios []turma.Exercicio, prog 
 			prog.avisar(feito, total, a.Nome)
 		},
 	}
-	saida, err := col.Coletar(alunos, exercicios)
+	saida, err := col.Coletar(ctx, alunos, exercicios)
 	if err != nil {
 		return res, err
 	}
@@ -269,7 +270,7 @@ type ResumoClone struct {
 
 // Clonar baixa, ou atualiza, o fork de cada entrega e posiciona o clone no
 // commit avaliado.
-func Clonar(t *turma.Turma, pastaTurma string, exercicios []turma.Exercicio, o OpcoesClone, prog AvisoProgresso) (ResumoClone, error) {
+func Clonar(ctx context.Context, t *turma.Turma, pastaTurma string, exercicios []turma.Exercicio, o OpcoesClone, prog AvisoProgresso) (ResumoClone, error) {
 	var res ResumoClone
 
 	alvos := AlvosDeClone(t, pastaTurma, exercicios, o)
@@ -277,7 +278,7 @@ func Clonar(t *turma.Turma, pastaTurma string, exercicios []turma.Exercicio, o O
 		return res, fmt.Errorf("nenhum fork a clonar: rode `classroom coletar` antes")
 	}
 
-	saida := repo.Sincronizar(alvos, t.Config.Host, t.Config.Paralelismo,
+	saida := repo.Sincronizar(ctx, alvos, t.Config.Host, t.Config.Paralelismo,
 		func(feito, total int, a repo.Alvo) {
 			prog.avisar(feito, total, a.Nome)
 		})
@@ -357,7 +358,7 @@ type ResumoVerificacao struct {
 // Roda uma vez por fork: a entrega em dupla tem um repositório só, e o
 // veredito é gravado para cada integrante, de modo que o relatório continua
 // tendo uma linha por aluno.
-func Verificar(t *turma.Turma, pastaTurma string, e turma.Exercicio, o OpcoesVerificacao, prog AvisoProgresso) (ResumoVerificacao, error) {
+func Verificar(ctx context.Context, t *turma.Turma, pastaTurma string, e turma.Exercicio, o OpcoesVerificacao, prog AvisoProgresso) (ResumoVerificacao, error) {
 	res := ResumoVerificacao{Contagem: map[turma.SituacaoVerificacao]int{}}
 	if !e.TemSuite() {
 		return res, fmt.Errorf(
@@ -404,7 +405,7 @@ func Verificar(t *turma.Turma, pastaTurma string, e turma.Exercicio, o OpcoesVer
 	}
 	res.PastaLogs = opts.PastaLogs
 
-	saida, err := verificacao.Executar(alvos, opts, t.Config.Paralelismo,
+	saida, err := verificacao.Executar(ctx, alvos, opts, t.Config.Paralelismo,
 		func(feito, total int, a verificacao.Alvo) {
 			prog.avisar(feito, total, a.Nome)
 		})

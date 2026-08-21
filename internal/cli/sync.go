@@ -42,7 +42,7 @@ func cmdSync() *cobra.Command {
 				}
 			}
 
-			res, err := acoes.Sincronizar(t, s.Pasta(), cli, acoes.OpcoesSync{
+			res, err := acoes.Sincronizar(cmd.Context(), t, s.Pasta(), cli, acoes.OpcoesSync{
 				PastaDiario: pastaDiario,
 				SemDiario:   semDiario,
 				SemGitLab:   semGitLab,

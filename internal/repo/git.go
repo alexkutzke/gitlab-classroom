@@ -23,6 +23,15 @@ const TempoLimite = 5 * time.Minute
 // Repo é um clone local.
 type Repo struct {
 	Dir string
+	// ctx cancela as operações de git deste clone; nil vale como fundo.
+	ctx context.Context
+}
+
+func (r *Repo) contexto() context.Context {
+	if r.ctx == nil {
+		return context.Background()
+	}
+	return r.ctx
 }
 
 // URLSSH monta o endereço de clone por SSH a partir do host configurado.
@@ -43,8 +52,14 @@ func Existe(dir string) bool {
 // Preparar clona o repositório ou, se o clone já existir, atualiza as
 // referências. Devolve o clone pronto para ser posicionado.
 func Preparar(dir, url string) (*Repo, error) {
+	return PrepararCom(context.Background(), dir, url)
+}
+
+// PrepararCom é o Preparar sob um contexto, para a interface conseguir
+// cancelar uma clonagem de turma inteira pela metade.
+func PrepararCom(ctx context.Context, dir, url string) (*Repo, error) {
 	if Existe(dir) {
-		r := &Repo{Dir: dir}
+		r := &Repo{Dir: dir, ctx: ctx}
 		// A URL pode ter mudado desde o clone, quando o aluno renomeia o
 		// projeto ou o grupo.
 		if _, err := r.git("remote", "set-url", "origin", url); err != nil {
@@ -58,10 +73,10 @@ func Preparar(dir, url string) (*Repo, error) {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return nil, err
 	}
-	if _, err := rodar("", TempoLimite, "clone", "--quiet", url, dir); err != nil {
+	if _, err := rodarCom(ctx, "", TempoLimite, "clone", "--quiet", url, dir); err != nil {
 		return nil, err
 	}
-	return &Repo{Dir: dir}, nil
+	return &Repo{Dir: dir, ctx: ctx}, nil
 }
 
 // Posicionar deixa o clone no commit avaliado, sob um ramo local de nome
@@ -118,14 +133,18 @@ func (r *Repo) TemCommit(sha string) bool {
 }
 
 func (r *Repo) git(args ...string) (string, error) {
-	return rodar(r.Dir, TempoLimite, args...)
+	return rodarCom(r.contexto(), r.Dir, TempoLimite, args...)
 }
 
 // rodar executa o git, com o terminal fora do caminho: pedido de senha ou de
 // confirmação de host vira erro, em vez de travar a coleta esperando alguém
 // digitar.
 func rodar(dir string, limite time.Duration, args ...string) (string, error) {
-	ctx, cancelar := context.WithTimeout(context.Background(), limite)
+	return rodarCom(context.Background(), dir, limite, args...)
+}
+
+func rodarCom(pai context.Context, dir string, limite time.Duration, args ...string) (string, error) {
+	ctx, cancelar := context.WithTimeout(pai, limite)
 	defer cancelar()
 
 	cmd := exec.CommandContext(ctx, "git", args...)

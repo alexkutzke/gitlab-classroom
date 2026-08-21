@@ -85,7 +85,7 @@ func (ta *telaAlunos) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	return nil, true
 }
 
-func (ta *telaAlunos) atalhos() string { return "P só pendentes · / filtra" }
+func (ta *telaAlunos) atalhos() string { return "S sincroniza · P só pendentes · / filtra" }
 
 func (ta *telaAlunos) desenhar(a *App) string {
 	var b strings.Builder
@@ -297,6 +297,14 @@ func (aj *ajuda) desenhar(a *App) string {
 			{"enter", "abre o item"},
 			{"esc q", "volta, e sai no painel"},
 			{"r", "recarrega os arquivos do disco"},
+		}},
+		{"Ações", [][2]string{
+			{"C", "coleta todos os exercícios ativos"},
+			{"S", "sincroniza o cadastro e as contas"},
+			{"c", "coleta o exercício sob o cursor, ou o aberto"},
+			{"l", "clona os forks do exercício aberto"},
+			{"v", "roda a suíte do exercício aberto"},
+			{"esc", "cancela a operação em curso"},
 		}},
 		{"Telas", [][2]string{
 			{"p", "painel"},

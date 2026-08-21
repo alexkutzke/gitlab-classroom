@@ -3,6 +3,7 @@
 package coleta
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -35,8 +36,9 @@ type Resultado struct {
 
 // Reconciliar resolve o grupo e a situação da conta de cada aluno, sem olhar
 // exercício nenhum. É o que o comando sync usa.
-func (c *Coletor) Reconciliar(alunos []turma.Aluno) ([]turma.Aluno, error) {
-	return c.resolverGrupos(alunos, c.Progresso), nil
+func (c *Coletor) Reconciliar(ctx context.Context, alunos []turma.Aluno) ([]turma.Aluno, error) {
+	out := c.resolverGrupos(ctx, alunos, c.Progresso)
+	return out, ctx.Err()
 }
 
 // Coletar apura as entregas dos alunos nos exercícios informados.
@@ -45,11 +47,19 @@ func (c *Coletor) Reconciliar(alunos []turma.Aluno) ([]turma.Aluno, error) {
 // compartilhados por mais de um aluno, e classificar cada entrega. A do meio
 // existe porque a entrega em dupla mora no grupo de um só dos integrantes, e
 // só a lista de membros do fork revela o outro.
-func (c *Coletor) Coletar(alunos []turma.Aluno, exercicios []turma.Exercicio) (Resultado, error) {
-	atualizados := c.resolverGrupos(alunos, nil)
+func (c *Coletor) Coletar(ctx context.Context, alunos []turma.Aluno, exercicios []turma.Exercicio) (Resultado, error) {
+	atualizados := c.resolverGrupos(ctx, alunos, nil)
+	if err := ctx.Err(); err != nil {
+		return Resultado{}, err
+	}
 	equipes := c.descobrirEquipes(atualizados, exercicios)
 
-	entregas, vinculos := c.coletarTodos(atualizados, exercicios, equipes)
+	entregas, vinculos := c.coletarTodos(ctx, atualizados, exercicios, equipes)
+	if err := ctx.Err(); err != nil {
+		// Coleta interrompida deixaria fora quem não foi visitado, e aplicar
+		// isso apagaria a entrega deles. Melhor não devolver nada.
+		return Resultado{}, err
+	}
 	return Resultado{Entregas: entregas, Alunos: atualizados, Vinculos: vinculos}, nil
 }
 
@@ -57,11 +67,11 @@ func (c *Coletor) Coletar(alunos []turma.Aluno, exercicios []turma.Exercicio) (R
 
 // resolverGrupos descobre o grupo e a situação da conta de cada aluno, em
 // paralelo.
-func (c *Coletor) resolverGrupos(alunos []turma.Aluno, progresso func(int, int, turma.Aluno)) []turma.Aluno {
+func (c *Coletor) resolverGrupos(ctx context.Context, alunos []turma.Aluno, progresso func(int, int, turma.Aluno)) []turma.Aluno {
 	out := make([]turma.Aluno, len(alunos))
 	copy(out, alunos)
 
-	c.emParalelo(len(out), func(i int) {
+	c.emParalelo(ctx, len(out), func(i int) {
 		a := out[i]
 		grupo, sit := c.resolverGrupo(a)
 		a.Grupo, a.SituacaoConta, a.VerificadoEm = grupo, sit, time.Now()
@@ -236,11 +246,11 @@ func donoDoFork(f gl.Projeto, porGrupo, porUsuario map[string]turma.Aluno) (turm
 
 // --- fase 3: entregas ---
 
-func (c *Coletor) coletarTodos(alunos []turma.Aluno, exercicios []turma.Exercicio, eq equipes) ([]turma.Entrega, []turma.Vinculo) {
+func (c *Coletor) coletarTodos(ctx context.Context, alunos []turma.Aluno, exercicios []turma.Exercicio, eq equipes) ([]turma.Entrega, []turma.Vinculo) {
 	porAluno := make([][]turma.Entrega, len(alunos))
 	vinculosPorAluno := make([][]turma.Vinculo, len(alunos))
 
-	c.emParalelo(len(alunos), func(i int) {
+	c.emParalelo(ctx, len(alunos), func(i int) {
 		porAluno[i], vinculosPorAluno[i] = c.coletarAluno(alunos[i], exercicios, eq)
 	}, func(feito, total, i int) {
 		if c.Progresso != nil {
@@ -461,7 +471,7 @@ func situacaoBloqueio(s turma.SituacaoConta) (turma.SituacaoEntrega, bool) {
 
 // emParalelo roda tarefa sobre os índices de 0 a n, com o pool do tamanho
 // configurado, chamando concluido a cada item terminado.
-func (c *Coletor) emParalelo(n int, tarefa func(i int), concluido func(feito, total, i int)) {
+func (c *Coletor) emParalelo(ctx context.Context, n int, tarefa func(i int), concluido func(feito, total, i int)) {
 	if n == 0 {
 		return
 	}
@@ -483,6 +493,9 @@ func (c *Coletor) emParalelo(n int, tarefa func(i int), concluido func(feito, to
 		go func() {
 			defer wg.Done()
 			for i := range indices {
+				if ctx.Err() != nil {
+					continue // desiste do que falta, sem matar o que já roda
+				}
 				tarefa(i)
 				mu.Lock()
 				feito++

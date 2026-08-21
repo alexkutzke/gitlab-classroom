@@ -34,6 +34,12 @@ func (p *painel) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 		a.exercicio = a.panorama.Exercicios[p.cursor].Exercicio.ID
 		a.entregas.reiniciar()
 		a.ir(idExercicio)
+	case "c":
+		if total == 0 {
+			a.erro = "nenhum exercício cadastrado"
+			return nil, true
+		}
+		return a.coletar([]turma.Exercicio{a.panorama.Exercicios[p.cursor].Exercicio}), true
 	default:
 		return nil, false
 	}

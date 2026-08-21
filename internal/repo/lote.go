@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"sync"
 )
 
@@ -41,7 +42,7 @@ type Resultado struct {
 // O paralelismo é o mesmo da coleta: são operações de rede curtas, e fazê-las
 // em série numa turma de trinta alunos era o que tornava lento o script
 // antigo.
-func Sincronizar(alvos []Alvo, host string, paralelismo int, progresso func(feito, total int, a Alvo)) []Resultado {
+func Sincronizar(ctx context.Context, alvos []Alvo, host string, paralelismo int, progresso func(feito, total int, a Alvo)) []Resultado {
 	if len(alvos) == 0 {
 		return nil
 	}
@@ -65,8 +66,15 @@ func Sincronizar(alvos []Alvo, host string, paralelismo int, progresso func(feit
 			for i := range indices {
 				a := alvos[i]
 				res := Resultado{Alvo: a, Novo: !Existe(a.Dir)}
+				if ctx.Err() != nil {
+					res.Erro = ctx.Err()
+					mu.Lock()
+					out[i] = res
+					mu.Unlock()
+					continue
+				}
 
-				r, err := Preparar(a.Dir, a.Endereco(host))
+				r, err := PrepararCom(ctx, a.Dir, a.Endereco(host))
 				if err != nil {
 					res.Erro = err
 				} else if head, err := r.Posicionar(NomeRamo(a.Exercicio), a.Commit); err != nil {
