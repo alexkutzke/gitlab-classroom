@@ -289,6 +289,30 @@ func (v Verificacao) Desatualizada(commitDaEntrega string) bool {
 	return v.Commit != "" && commitDaEntrega != "" && v.Commit != commitDaEntrega
 }
 
+// OrigemVinculo diz quem afirmou que a entrega é compartilhada.
+type OrigemVinculo string
+
+const (
+	// VinculoDescoberto veio da API: o aluno é membro de um fork que está no
+	// grupo de outro. A coleta regrava esses a cada passada.
+	VinculoDescoberto OrigemVinculo = "gitlab"
+	// VinculoManual foi cadastrado pelo professor e a coleta não o toca.
+	// Cobre a dupla que trabalhou junto sem adicionar o colega ao projeto.
+	VinculoManual OrigemVinculo = "manual"
+)
+
+// Vinculo registra que um aluno entregou dentro do fork de outro.
+//
+// Só os integrantes que não são donos do fork têm linha: a equipe de uma
+// entrega é o dono mais quem aponta para ele.
+type Vinculo struct {
+	Exercicio    string
+	GRR          string // o integrante
+	Dono         string // GRR de quem tem o fork no próprio grupo
+	Origem       OrigemVinculo
+	AtualizadoEm time.Time
+}
+
 // Config são os metadados da turma, persistidos em config.toml.
 type Config struct {
 	Codigo     string `toml:"codigo"`
@@ -394,6 +418,102 @@ type Turma struct {
 	Entregas     []Entrega
 	Notas        []Nota
 	Verificacoes []Verificacao
+	Vinculos     []Vinculo
+}
+
+// Dono devolve o GRR de quem tem o fork usado por este aluno no exercício.
+// Sem vínculo, o dono é o próprio aluno.
+func (t *Turma) Dono(exercicio, grr string) string {
+	grr = NormalizarGRR(grr)
+	for _, v := range t.Vinculos {
+		if v.Exercicio == exercicio && v.GRR == grr {
+			return v.Dono
+		}
+	}
+	return grr
+}
+
+// Compartilhada informa se a entrega do aluno é de uma equipe, com dois ou
+// mais integrantes.
+func (t *Turma) Compartilhada(exercicio, grr string) bool {
+	return len(t.Equipe(exercicio, grr)) > 1
+}
+
+// Equipe devolve todos os GRRs que entregam no mesmo fork, incluindo o dono,
+// em ordem. Aluno sem vínculo devolve só ele mesmo.
+func (t *Turma) Equipe(exercicio, grr string) []string {
+	dono := t.Dono(exercicio, grr)
+	equipe := []string{dono}
+	for _, v := range t.Vinculos {
+		if v.Exercicio == exercicio && v.Dono == dono {
+			equipe = append(equipe, v.GRR)
+		}
+	}
+	sort.Strings(equipe)
+	return equipe
+}
+
+// VinculosDoExercicio devolve os vínculos de um exercício, por GRR do
+// integrante.
+func (t *Turma) VinculosDoExercicio(exercicio string) map[string]Vinculo {
+	out := map[string]Vinculo{}
+	for _, v := range t.Vinculos {
+		if v.Exercicio == exercicio {
+			out[v.GRR] = v
+		}
+	}
+	return out
+}
+
+// RegistrarVinculo insere ou substitui o vínculo de um integrante.
+func (t *Turma) RegistrarVinculo(v Vinculo) {
+	v.GRR, v.Dono = NormalizarGRR(v.GRR), NormalizarGRR(v.Dono)
+	for i := range t.Vinculos {
+		if t.Vinculos[i].Exercicio == v.Exercicio && t.Vinculos[i].GRR == v.GRR {
+			t.Vinculos[i] = v
+			return
+		}
+	}
+	t.Vinculos = append(t.Vinculos, v)
+	ordenarVinculos(t.Vinculos)
+}
+
+// RemoverVinculo desfaz o vínculo de um integrante.
+func (t *Turma) RemoverVinculo(exercicio, grr string) bool {
+	grr = NormalizarGRR(grr)
+	for i := range t.Vinculos {
+		if t.Vinculos[i].Exercicio == exercicio && t.Vinculos[i].GRR == grr {
+			t.Vinculos = append(t.Vinculos[:i], t.Vinculos[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// SubstituirVinculosDescobertos troca o que a coleta apurou em um exercício,
+// preservando o que foi cadastrado à mão.
+//
+// Mesma separação das notas: o que a API diz é regravado a cada coleta, o que
+// o professor afirmou permanece. Um vínculo manual também vence o descoberto
+// para o mesmo aluno, porque foi uma decisão consciente.
+func (t *Turma) SubstituirVinculosDescobertos(exercicio string, novos []Vinculo) {
+	manuais := map[string]bool{}
+	mantidos := t.Vinculos[:0:0]
+	for _, v := range t.Vinculos {
+		if v.Exercicio != exercicio || v.Origem == VinculoManual {
+			mantidos = append(mantidos, v)
+			if v.Exercicio == exercicio {
+				manuais[v.GRR] = true
+			}
+		}
+	}
+	for _, v := range novos {
+		if !manuais[NormalizarGRR(v.GRR)] {
+			mantidos = append(mantidos, v)
+		}
+	}
+	t.Vinculos = mantidos
+	ordenarVinculos(t.Vinculos)
 }
 
 // Verificacao devolve o último resultado da suíte para um aluno.
@@ -427,6 +547,16 @@ func (t *Turma) RegistrarVerificacao(v Verificacao) {
 	}
 	t.Verificacoes = append(t.Verificacoes, v)
 	ordenarVerificacoes(t.Verificacoes)
+	ordenarVinculos(t.Vinculos)
+}
+
+func ordenarVinculos(vs []Vinculo) {
+	sort.SliceStable(vs, func(i, j int) bool {
+		if vs[i].Exercicio != vs[j].Exercicio {
+			return vs[i].Exercicio < vs[j].Exercicio
+		}
+		return vs[i].GRR < vs[j].GRR
+	})
 }
 
 // AlunoPorGRR devolve o aluno com o GRR informado.

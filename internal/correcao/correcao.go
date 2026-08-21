@@ -36,8 +36,10 @@ type Item struct {
 	// tem uma. Situação vazia significa que não foi verificado.
 	Verificacao turma.Verificacao
 	// Dir é o clone local. Vazio ou inexistente desabilita a abertura no
-	// editor.
+	// editor. Na entrega em dupla, aponta para o clone do dono do fork.
 	Dir string
+	// Equipe traz os demais integrantes da entrega, quando há.
+	Equipe []string
 
 	nota       float64
 	temNota    bool
@@ -52,6 +54,9 @@ type Opcoes struct {
 	Exercicio  turma.Exercicio
 	NotaMaxima float64
 	Itens      []Item
+	// Propagar repete a nota nos demais integrantes de uma entrega em dupla,
+	// que é o que se quer quase sempre. A tecla D desliga durante a sessão.
+	Propagar bool
 }
 
 // Resultado é o que a correção devolve ao comando.
@@ -92,6 +97,9 @@ type modelo struct {
 	temUltimaNota    bool
 	ultimoComentario string
 
+	// propagar repete a nota nos demais integrantes da entrega em dupla.
+	propagar bool
+
 	aviso  string
 	salvar bool
 }
@@ -109,6 +117,7 @@ func Executar(o Opcoes) (Resultado, error) {
 		exercicio:  o.Exercicio,
 		notaMaxima: o.NotaMaxima,
 		itens:      o.Itens,
+		propagar:   o.Propagar,
 		altura:     20,
 		largura:    100,
 	}
@@ -240,7 +249,15 @@ func (m *modelo) teclaNavegacao(msg tea.KeyMsg) tea.Cmd {
 		if it := m.atual(); it != nil && it.temNota {
 			it.temNota, it.nota, it.comentario = false, 0, ""
 			it.removido, it.alterado = true, true
+			m.propagarDe(*it)
 			m.mover(1)
+		}
+	case "D":
+		m.propagar = !m.propagar
+		if m.propagar {
+			m.aviso = "nota da entrega em dupla vai para os dois integrantes"
+		} else {
+			m.aviso = "nota lançada só para o aluno sob o cursor"
 		}
 	case "r":
 		m.repetir()
@@ -287,6 +304,7 @@ func (m *modelo) teclaNota(msg tea.KeyMsg) tea.Cmd {
 		it.nota, it.temNota, it.alterado, it.removido = valor, true, true, false
 		m.ultimaNota, m.temUltimaNota = valor, true
 		m.ultimoComentario = it.comentario
+		m.propagarDe(*it)
 		m.modo, m.buffer = navegando, ""
 		m.mover(1)
 	case "backspace":
@@ -368,7 +386,39 @@ func (m *modelo) repetir() {
 	if it.comentario == "" {
 		it.comentario = m.ultimoComentario
 	}
+	m.propagarDe(*it)
 	m.mover(1)
+}
+
+// propagarDe repete nota, comentário e remoção nos demais integrantes da
+// mesma entrega.
+//
+// Uma entrega em dupla é um trabalho só, e lançar duas notas diferentes seria
+// acidente quase sempre. A tecla D desliga isso quando a intenção for mesmo
+// avaliar um integrante à parte.
+func (m *modelo) propagarDe(origem Item) {
+	if !m.propagar || len(origem.Equipe) == 0 {
+		return
+	}
+	iguais := 0
+	for i := range m.itens {
+		outro := &m.itens[i]
+		if outro.Aluno.GRR == origem.Aluno.GRR || !mesmaEntrega(origem, *outro) {
+			continue
+		}
+		outro.nota, outro.temNota = origem.nota, origem.temNota
+		outro.comentario, outro.alterado = origem.comentario, true
+		outro.removido = origem.removido
+		iguais++
+	}
+	if iguais > 0 {
+		m.aviso = fmt.Sprintf("mesma nota aplicada a %s", strings.Join(origem.Equipe, ", "))
+	}
+}
+
+// mesmaEntrega informa se os dois alunos entregaram no mesmo fork.
+func mesmaEntrega(a, b Item) bool {
+	return a.Entrega.Projeto != "" && a.Entrega.Projeto == b.Entrega.Projeto
 }
 
 type erroAbertura struct{ err error }

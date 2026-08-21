@@ -86,6 +86,11 @@ inteiro e nunca toca em `notas.csv` nem em `verificacoes.csv`**. Um é o que o
 GitLab diz, o segundo é o que o professor decidiu, o terceiro é o que a suíte
 apurou. Foi para isso que os três arquivos existem separados.
 
+`equipes.csv` tem uma linha por integrante que **não** é dono do fork: a
+equipe de uma entrega é o dono mais quem aponta para ele. A coleta regrava só
+as linhas de origem `gitlab`; as de origem `manual` são do professor e nunca
+são tocadas, inclusive vencendo o que a API disser sobre o mesmo aluno.
+
 `verificacoes.csv` guarda o commit verificado. Quando ele difere do commit da
 entrega corrente, o resultado está velho, e a tela de correção marca isso com
 `!` em vez de fingir que o veredito ainda vale.
@@ -141,6 +146,7 @@ resolve.
 | `classroom status` | panorama: cadastro pendente e situação de cada exercício |
 | `classroom alunos` | o cadastro, com grupo e situação da conta |
 | `classroom alunos editar` | fixa o login ou o grupo de um aluno específico |
+| `classroom equipes` | entregas feitas por mais de um aluno, com `vincular` e `desvincular` |
 | `classroom relatorio` | tabela de entregas em markdown, para o professor ou para o material |
 | `classroom clonar` | baixa os forks e posiciona cada clone no commit avaliado |
 | `classroom abrir` | abre o clone no editor, ou o projeto no navegador |
@@ -172,6 +178,31 @@ caminho que ganha de tudo isso, para o grupo com nome que a busca não alcança.
 
 Mudar login ou grupo zera a situação da conta: o que tinha sido apurado antes
 deixa de valer e o próximo `sync` confere de novo.
+
+## Entregas em dupla
+
+As tarefas podem ser feitas em dupla, e aí existe um fork só, no grupo de um
+dos dois, com o colega adicionado como membro do projeto (nunca do grupo). A
+coleta tem uma fase própria para isso, entre resolver os grupos e classificar
+as entregas: lista os forks do repositório-modelo, lê os membros de cada um e
+casa com o cadastro.
+
+Regras que o código precisa manter:
+
+- fork próprio vence participação no fork alheio. Quem bifurcou é avaliado
+  pelo que está no grupo dele;
+- falha na descoberta não interrompe a coleta. Sem ela, cada aluno é avaliado
+  pelo próprio grupo, que era o comportamento anterior à fase 5;
+- membro que não está no cadastro da turma é ignorado, o que já descarta o
+  professor e eventuais monitores;
+- aluno sem grupo visível ainda pode ter entregado no fork do colega, então o
+  problema de conta não encerra a busca;
+- um fork, um clone. O integrante que não é dono aponta para a pasta do dono,
+  e a suíte de verificação roda uma vez, com o resultado gravado por aluno.
+
+A nota continua sendo por aluno, porque é ela que entra na média, mas lançar a
+de um integrante lança a dos demais por padrão, na interface e no comando
+avulso. `D` e `--so-este` desligam isso.
 
 ## Classificação da entrega
 
@@ -262,7 +293,7 @@ e a interface avisa isso em vez de perder o que foi digitado.
 
 ## Fases de implementação
 
-As quatro estão feitas.
+As cinco estão feitas.
 
 1. `store`, modelo, `init`, `sync`, `exercicios`, `token`, `coletar` por API,
    `status`, `alunos` e `relatorio` em markdown. Substituiu os scripts de `old/`.
@@ -271,6 +302,8 @@ As quatro estão feitas.
 3. `corrigir`, `nota` e `notas`: correção interativa, comentário devolvido ao
    aluno e planilha com média ponderada.
 4. `verificar`: suíte automatizada em contêiner sem rede.
+5. `equipes`: entregas em dupla descobertas pelos membros do fork, com
+   cadastro manual, clone único e nota propagada.
 
 Cada fase entra com teste. Seguir o padrão do `diario`: testes de tabela sobre
 os pacotes de domínio e de leitura de arquivo, com fixtures anonimizadas em

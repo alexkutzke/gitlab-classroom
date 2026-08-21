@@ -66,12 +66,21 @@ func cmdColetar() *cobra.Command {
 					}
 				}
 				t.SubstituirEntregas(e.ID, doExercicio)
+
+				var vinculos []turma.Vinculo
+				for _, v := range res.Vinculos {
+					if v.Exercicio == e.ID {
+						vinculos = append(vinculos, v)
+					}
+				}
+				t.SubstituirVinculosDescobertos(e.ID, vinculos)
 			}
+			relatarEquipes(t, exercicios)
 
 			for _, e := range exercicios {
 				entregas := t.EntregasDoExercicio(e.ID)
 				if detalhado {
-					relatorio.Entregas(os.Stdout, e, t.Ativos(), entregas)
+					relatorio.Entregas(os.Stdout, t, e, t.Ativos(), entregas)
 					fmt.Println()
 					continue
 				}
@@ -90,6 +99,35 @@ func cmdColetar() *cobra.Command {
 	c.Flags().BoolVar(&detalhado, "detalhado", false, "listar aluno a aluno em vez do resumo")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "mostrar o resultado sem gravar")
 	return c
+}
+
+// relatarEquipes avisa quais entregas são de mais de um aluno, porque isso
+// muda o que o professor vai abrir e quantas notas vai lançar.
+func relatarEquipes(t *turma.Turma, exercicios []turma.Exercicio) {
+	for _, e := range exercicios {
+		vinculos := t.VinculosDoExercicio(e.ID)
+		if len(vinculos) == 0 {
+			continue
+		}
+		fmt.Printf("Entregas compartilhadas em %s:\n", e.ID)
+		for _, v := range vinculos {
+			integrante, _ := t.AlunoPorGRR(v.GRR)
+			dono, _ := t.AlunoPorGRR(v.Dono)
+			marca := ""
+			if v.Origem == turma.VinculoManual {
+				marca = " (cadastrada à mão)"
+			}
+			fmt.Printf("  %s entregou no fork de %s%s\n",
+				nomeOuGRR(integrante, v.GRR), nomeOuGRR(dono, v.Dono), marca)
+		}
+	}
+}
+
+func nomeOuGRR(a *turma.Aluno, grr string) string {
+	if a == nil {
+		return grr
+	}
+	return a.Nome
 }
 
 // escolherExercicios resolve os ids informados, ou devolve todos os ativos.

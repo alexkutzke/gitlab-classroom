@@ -60,23 +60,47 @@ func Exercicios(w io.Writer, es []turma.Exercicio) {
 }
 
 // Entregas detalha um exercício, aluno a aluno.
-func Entregas(w io.Writer, e turma.Exercicio, alunos []turma.Aluno, entregas map[string]turma.Entrega) {
+//
+// A coluna de equipe existe porque a entrega em dupla tem um repositório só:
+// sem ela, dois alunos apareceriam com o mesmo resultado sem explicação.
+func Entregas(w io.Writer, t *turma.Turma, e turma.Exercicio, alunos []turma.Aluno, entregas map[string]turma.Entrega) {
 	fmt.Fprintf(w, "%s  %s  prazo %s\n", e.ID, e.Titulo, e.Prazo.String())
 	tw := nova(w)
-	fmt.Fprintln(tw, "GRR\tALUNO\tSITUAÇÃO\tCOMMITS\tÚLTIMO COMMIT")
+	fmt.Fprintln(tw, "GRR\tALUNO\tSITUAÇÃO\tCOMMITS\tÚLTIMO COMMIT\tEQUIPE")
 	for _, a := range alunos {
 		en, ok := entregas[a.GRR]
 		if !ok {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t\t\n", a.GRR, a.Nome, "não coletado")
+			fmt.Fprintf(tw, "%s\t%s\t%s\t\t\t\n", a.GRR, a.Nome, "não coletado")
 			continue
 		}
 		ultimo := "-"
 		if !en.DataUltimo.IsZero() {
 			ultimo = turma.DataDe(en.DataUltimo).String()
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", a.GRR, a.Nome, en.Descricao(), en.Commits, ultimo)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\n",
+			a.GRR, a.Nome, en.Descricao(), en.Commits, ultimo, equipeDe(t, e.ID, a))
 	}
 	tw.Flush()
+}
+
+// equipeDe descreve com quem o aluno dividiu a entrega.
+func equipeDe(t *turma.Turma, exercicio string, a turma.Aluno) string {
+	equipe := t.Equipe(exercicio, a.GRR)
+	if len(equipe) < 2 {
+		return ""
+	}
+	var outros []string
+	for _, grr := range equipe {
+		if grr == a.GRR {
+			continue
+		}
+		if colega, ok := t.AlunoPorGRR(grr); ok {
+			outros = append(outros, colega.Nome)
+			continue
+		}
+		outros = append(outros, grr)
+	}
+	return "com " + strings.Join(outros, ", ")
 }
 
 // Resumo conta as situações de um exercício.

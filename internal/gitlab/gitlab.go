@@ -36,6 +36,14 @@ type Projeto struct {
 	Vazio      bool
 }
 
+// Membro é alguém associado a um projeto. É por aqui que se descobre a
+// entrega em dupla: o colega entra como membro do fork, e não do grupo.
+type Membro struct {
+	Usuario     string
+	Nome        string
+	NivelAcesso int
+}
+
 // Commit é um commit do ramo consultado.
 type Commit struct {
 	SHA    string
@@ -62,6 +70,11 @@ type Cliente interface {
 	// Commits lista os commits de um projeto. Ramo vazio usa o ramo padrão;
 	// todos inclui os commits de qualquer ramo.
 	Commits(projeto string, ramo string, todos bool) ([]Commit, error)
+	// Forks lista os forks visíveis de um projeto-modelo.
+	Forks(modelo string) ([]Projeto, error)
+	// Membros lista quem está associado a um projeto, herança de grupo
+	// incluída.
+	Membros(projeto string) ([]Membro, error)
 }
 
 // paginaMaxima limita a varredura de commits de um repositório de exercício.
@@ -79,6 +92,8 @@ type clienteAPI struct {
 	grupos   []Grupo // cache de GruposDoProfessor
 	projetos map[string][]Projeto
 	commits  map[string][]Commit
+	forks    map[string][]Projeto
+	membros  map[string][]Membro
 }
 
 // Novo abre um cliente autenticado.
@@ -98,6 +113,8 @@ func Novo(host, token string) (Cliente, error) {
 		c:        c,
 		projetos: map[string][]Projeto{},
 		commits:  map[string][]Commit{},
+		forks:    map[string][]Projeto{},
+		membros:  map[string][]Membro{},
 	}, nil
 }
 
@@ -247,6 +264,78 @@ func (g *clienteAPI) Commits(projeto, ramo string, todos bool) ([]Commit, error)
 
 	g.mu.Lock()
 	g.commits[chave] = out
+	g.mu.Unlock()
+	return out, nil
+}
+
+func (g *clienteAPI) Forks(modelo string) ([]Projeto, error) {
+	g.mu.Lock()
+	if f, ok := g.forks[modelo]; ok {
+		g.mu.Unlock()
+		return f, nil
+	}
+	g.mu.Unlock()
+
+	var out []Projeto
+	opt := &api.ListProjectsOptions{ListOptions: api.ListOptions{PerPage: porPagina, Page: 1}}
+	for {
+		ps, resp, err := g.c.Projects.ListProjectForks(modelo, opt)
+		if err != nil {
+			if resp != nil && resp.StatusCode == http.StatusNotFound {
+				return nil, nil
+			}
+			return nil, traduzirErro(err, "listando os forks de "+modelo)
+		}
+		for _, p := range ps {
+			out = append(out, converterProjeto(p))
+		}
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	g.mu.Lock()
+	g.forks[modelo] = out
+	g.mu.Unlock()
+	return out, nil
+}
+
+func (g *clienteAPI) Membros(projeto string) ([]Membro, error) {
+	g.mu.Lock()
+	if m, ok := g.membros[projeto]; ok {
+		g.mu.Unlock()
+		return m, nil
+	}
+	g.mu.Unlock()
+
+	var out []Membro
+	opt := &api.ListProjectMembersOptions{ListOptions: api.ListOptions{PerPage: porPagina, Page: 1}}
+	for {
+		// A listagem "all" inclui quem herdou acesso do grupo, que é onde o
+		// dono do fork aparece.
+		ms, resp, err := g.c.ProjectMembers.ListAllProjectMembers(projeto, opt)
+		if err != nil {
+			if resp != nil && resp.StatusCode == http.StatusNotFound {
+				return nil, nil
+			}
+			return nil, traduzirErro(err, "listando os membros de "+projeto)
+		}
+		for _, m := range ms {
+			out = append(out, Membro{
+				Usuario:     m.Username,
+				Nome:        m.Name,
+				NivelAcesso: int(m.AccessLevel),
+			})
+		}
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	g.mu.Lock()
+	g.membros[projeto] = out
 	g.mu.Unlock()
 	return out, nil
 }

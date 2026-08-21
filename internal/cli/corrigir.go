@@ -10,13 +10,12 @@ import (
 
 	"github.com/alexkutzke/gitlab-classroom/internal/correcao"
 	"github.com/alexkutzke/gitlab-classroom/internal/export"
-	"github.com/alexkutzke/gitlab-classroom/internal/repo"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
 func cmdCorrigir() *cobra.Command {
 	var id string
-	var soEntregues, semNota bool
+	var soEntregues, semNota, semPropagar bool
 
 	c := &cobra.Command{
 		Use:   "corrigir",
@@ -50,7 +49,10 @@ func cmdCorrigir() *cobra.Command {
 					Aluno:       a,
 					Entrega:     en,
 					Verificacao: verificacoes[a.GRR],
-					Dir:         repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, a),
+					Dir:         dirDaEntrega(t, s.Pasta(), e.ID, a),
+				}
+				if equipe := t.Equipe(e.ID, a.GRR); len(equipe) > 1 {
+					item.Equipe = nomesDaEquipe(t, equipe, a.GRR)
 				}
 				if n, ok := t.Nota(e.ID, a.GRR); ok {
 					if semNota {
@@ -68,6 +70,7 @@ func cmdCorrigir() *cobra.Command {
 				Exercicio:  *e,
 				NotaMaxima: t.Config.NotaMaxima,
 				Itens:      itens,
+				Propagar:   !semPropagar,
 			})
 			if err != nil {
 				return err
@@ -92,16 +95,34 @@ func cmdCorrigir() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&id, "exercicio", "", "exercício a corrigir")
+	c.Flags().BoolVar(&semPropagar, "sem-propagar", false,
+		"não repetir a nota nos demais integrantes da entrega em dupla")
 	c.Flags().BoolVar(&soEntregues, "so-entregues", false, "listar só quem entregou no prazo")
 	c.Flags().BoolVar(&semNota, "sem-nota", false, "listar só quem ainda não tem nota")
 	c.MarkFlagRequired("exercicio")
 	return c
 }
 
+// nomesDaEquipe devolve os nomes dos demais integrantes da entrega.
+func nomesDaEquipe(t *turma.Turma, equipe []string, exceto string) []string {
+	var out []string
+	for _, grr := range equipe {
+		if grr == exceto {
+			continue
+		}
+		if a, ok := t.AlunoPorGRR(grr); ok {
+			out = append(out, primeiroNome(a.Nome))
+			continue
+		}
+		out = append(out, grr)
+	}
+	return out
+}
+
 func cmdNota() *cobra.Command {
 	var id, grr, comentario string
 	var valor float64
-	var remover bool
+	var remover, soEste bool
 
 	c := &cobra.Command{
 		Use:   "nota",
@@ -123,14 +144,27 @@ func cmdNota() *cobra.Command {
 				return fmt.Errorf("aluno %q não encontrado", grr)
 			}
 
+			// A entrega em dupla é um trabalho só: por padrão a nota vale
+			// para todos os integrantes, como na interface de correção.
+			alvos := []string{a.GRR}
+			if !soEste {
+				alvos = t.Equipe(e.ID, a.GRR)
+			}
+
 			if remover {
-				if !t.RemoverNota(e.ID, a.GRR) {
+				apagadas := 0
+				for _, alvo := range alvos {
+					if t.RemoverNota(e.ID, alvo) {
+						apagadas++
+					}
+				}
+				if apagadas == 0 {
 					return fmt.Errorf("%s não tem nota em %s", a.GRR, e.ID)
 				}
 				if err := s.Gravar(t); err != nil {
 					return err
 				}
-				fmt.Printf("Nota de %s em %s apagada.\n", a.Nome, e.ID)
+				fmt.Printf("%d nota(s) apagada(s) em %s.\n", apagadas, e.ID)
 				return nil
 			}
 
@@ -140,14 +174,21 @@ func cmdNota() *cobra.Command {
 			if valor < 0 || valor > t.Config.NotaMaxima {
 				return fmt.Errorf("nota %g fora da escala 0 a %g", valor, t.Config.NotaMaxima)
 			}
-			n := turma.Nota{Exercicio: e.ID, GRR: a.GRR, Valor: valor, Comentario: comentario}
-			if anterior, ok := t.Nota(e.ID, a.GRR); ok && !cmd.Flags().Changed("comentario") {
-				n.Comentario = anterior.Comentario
+			for _, alvo := range alvos {
+				n := turma.Nota{Exercicio: e.ID, GRR: alvo, Valor: valor, Comentario: comentario}
+				if anterior, ok := t.Nota(e.ID, alvo); ok && !cmd.Flags().Changed("comentario") {
+					n.Comentario = anterior.Comentario
+				}
+				n.CorrigidoEm = agora()
+				t.RegistrarNota(n)
 			}
-			n.CorrigidoEm = agora()
-			t.RegistrarNota(n)
 			if err := s.Gravar(t); err != nil {
 				return err
+			}
+			if len(alvos) > 1 {
+				fmt.Printf("%g em %s para a entrega de %s.\n",
+					valor, e.ID, strings.Join(nomesDaEquipe(t, alvos, ""), " e "))
+				return nil
 			}
 			fmt.Printf("%s em %s: %g.\n", a.Nome, e.ID, valor)
 			return nil
@@ -158,6 +199,8 @@ func cmdNota() *cobra.Command {
 	c.Flags().Float64Var(&valor, "valor", 0, "nota, de 0 até nota_maxima")
 	c.Flags().StringVar(&comentario, "comentario", "", "comentário devolvido ao aluno")
 	c.Flags().BoolVar(&remover, "remover", false, "apagar a nota lançada")
+	c.Flags().BoolVar(&soEste, "so-este", false,
+		"lançar só para este aluno, sem repetir nos demais integrantes da entrega")
 	c.MarkFlagRequired("exercicio")
 	c.MarkFlagRequired("grr")
 	return c

@@ -13,6 +13,26 @@ import (
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
+// donoDaEntrega devolve o aluno cujo clone serve a este aluno no exercício.
+//
+// Na entrega em dupla há um fork só, então há um clone só: o do dono. O
+// colega aponta para a mesma pasta em vez de ganhar uma cópia.
+func donoDaEntrega(t *turma.Turma, exercicio string, a turma.Aluno) turma.Aluno {
+	grr := t.Dono(exercicio, a.GRR)
+	if grr == a.GRR {
+		return a
+	}
+	if dono, ok := t.AlunoPorGRR(grr); ok {
+		return *dono
+	}
+	return a
+}
+
+// dirDaEntrega é a pasta do clone que atende este aluno no exercício.
+func dirDaEntrega(t *turma.Turma, pasta, exercicio string, a turma.Aluno) string {
+	return repo.Caminho(pasta, t.Config.PastaEntregas, exercicio, donoDaEntrega(t, exercicio, a))
+}
+
 func cmdClonar() *cobra.Command {
 	var ids []string
 	var soEntregues bool
@@ -38,6 +58,7 @@ func cmdClonar() *cobra.Command {
 			}
 
 			var alvos []repo.Alvo
+			vistos := map[string]bool{}
 			for _, e := range exercicios {
 				entregas := t.EntregasDoExercicio(e.ID)
 				for _, a := range t.Ativos() {
@@ -48,10 +69,17 @@ func cmdClonar() *cobra.Command {
 					if soEntregues && en.Situacao != turma.Entregue {
 						continue
 					}
+					dono := donoDaEntrega(t, e.ID, a)
+					dir := repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, dono)
+					// Entrega em dupla tem um fork só: clonar uma vez basta,
+					// e clonar duas na mesma pasta daria conflito.
+					if vistos[dir] {
+						continue
+					}
+					vistos[dir] = true
 					alvos = append(alvos, repo.Alvo{
-						Exercicio: e.ID, GRR: a.GRR, Nome: a.Nome,
-						Projeto: en.Projeto, Commit: en.Commit,
-						Dir: repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, a),
+						Exercicio: e.ID, GRR: dono.GRR, Nome: dono.Nome,
+						Projeto: en.Projeto, Commit: en.Commit, Dir: dir,
 					})
 				}
 			}
@@ -126,7 +154,7 @@ func cmdAbrir() *cobra.Command {
 				return AbrirNoNavegador(url)
 			}
 
-			dir := repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, *a)
+			dir := dirDaEntrega(t, s.Pasta(), e.ID, *a)
 			if !repo.Existe(dir) {
 				return fmt.Errorf("clone ausente em %s: rode `classroom clonar --exercicio %s`", dir, e.ID)
 			}

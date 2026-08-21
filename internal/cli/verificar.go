@@ -53,15 +53,24 @@ func cmdVerificar() *cobra.Command {
 			}
 
 			entregas := t.EntregasDoExercicio(e.ID)
+			// Uma entrega em dupla é um fork só: a suíte roda uma vez, e o
+			// resultado vale para todos os integrantes.
 			var alvos []verificacao.Alvo
+			porDono := map[string][]string{}
 			for _, a := range t.Ativos() {
 				if grr != "" && !strings.EqualFold(a.GRR, grr) {
 					continue
 				}
-				dir := repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, a)
-				alvos = append(alvos, verificacao.Alvo{
-					GRR: a.GRR, Nome: a.Nome, Dir: dir, Commit: entregas[a.GRR].Commit,
-				})
+				dono := donoDaEntrega(t, e.ID, a)
+				if _, visto := porDono[dono.GRR]; !visto {
+					alvos = append(alvos, verificacao.Alvo{
+						GRR:    dono.GRR,
+						Nome:   dono.Nome,
+						Dir:    repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, dono),
+						Commit: entregas[dono.GRR].Commit,
+					})
+				}
+				porDono[dono.GRR] = append(porDono[dono.GRR], a.GRR)
 			}
 			if len(alvos) == 0 {
 				return fmt.Errorf("nenhum aluno a verificar")
@@ -101,7 +110,6 @@ func cmdVerificar() *cobra.Command {
 
 			contagem := map[turma.SituacaoVerificacao]int{}
 			for _, v := range res {
-				contagem[v.Situacao]++
 				if v.Situacao == turma.Reprovado || v.Situacao == turma.ErroVerificacao {
 					a, _ := t.AlunoPorGRR(v.GRR)
 					nome := v.GRR
@@ -110,8 +118,15 @@ func cmdVerificar() *cobra.Command {
 					}
 					fmt.Printf("  %-40s %s\n", nome, v.Resumo())
 				}
-				if !dryRun {
-					t.RegistrarVerificacao(v)
+				// O resultado do fork vale para cada integrante da entrega,
+				// e assim o relatório continua tendo uma linha por aluno.
+				for _, integrante := range porDono[v.GRR] {
+					contagem[v.Situacao]++
+					if !dryRun {
+						copia := v
+						copia.GRR = integrante
+						t.RegistrarVerificacao(copia)
+					}
 				}
 			}
 			fmt.Printf("%d aprovado(s), %d reprovado(s), %d sem clone, %d com erro.\n",

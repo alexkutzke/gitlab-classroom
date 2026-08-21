@@ -166,6 +166,7 @@ verificação automática, se houver, e a nota já lançada. A escala vai de 0 a
 | Tecla | Ação |
 |---|---|
 | `j` `k` ou setas | move o cursor |
+| `D` | liga ou desliga repetir a nota nos integrantes da mesma entrega |
 | `0`-`9` | começa a digitar a nota do aluno sob o cursor |
 | `n` | edita a nota |
 | `c` | edita o comentário devolvido ao aluno |
@@ -226,6 +227,42 @@ na tela de correção.
 Exercício sem suíte cadastrada fica como `sem_suite` e não sofre nada por
 isso: significa que a correção é toda à mão.
 
+### Entregas em dupla
+
+Nas tarefas em dupla só um dos integrantes bifurca, no grupo dele, e adiciona
+o colega como membro do projeto. Procurar apenas no grupo de cada aluno
+marcaria o colega como quem não entregou, o que é falso e chega até ele pelo
+relatório publicado.
+
+A coleta resolve isso sozinha: lista os forks do repositório-modelo, lê os
+membros de cada um e, para o aluno sem fork no próprio grupo, procura um fork
+onde ele foi adicionado. O resultado fica em `equipes.csv`.
+
+```bash
+classroom equipes
+classroom equipes vincular --exercicio html --grr GRR20259002 --dono GRR20259001
+classroom equipes desvincular --exercicio html --grr GRR20259002
+```
+
+O `vincular` cobre a dupla que trabalhou junto sem adicionar o colega ao
+projeto, caso em que não há o que descobrir. Vínculo cadastrado à mão não é
+apagado pela coleta e vence o que a API disser sobre o mesmo aluno, pela mesma
+razão que separa `entregas.csv` de `notas.csv`.
+
+Quem tem fork próprio é avaliado por ele, mesmo sendo membro do fork de outro:
+duas entregas separadas continuam sendo duas entregas.
+
+O que muda no resto da ferramenta quando a entrega é de dois:
+
+- **clone**: um fork, um clone. O colega aponta para a pasta do dono em vez de
+  ganhar uma cópia;
+- **verificação**: a suíte roda uma vez e o resultado é gravado para cada
+  integrante, então o relatório continua tendo uma linha por aluno;
+- **nota**: lançar a nota de um integrante lança a dos demais, tanto na
+  interface quanto em `classroom nota`. A tecla `D` na interface, e
+  `--so-este` no comando, desligam isso quando a intenção for avaliar alguém à
+  parte.
+
 ### Aluno com login fora da convenção
 
 O login de cada aluno no GitLab é o GRR em minúsculas, e o grupo segue o
@@ -285,7 +322,8 @@ ds122_n/
     ├── exercicios.csv       # id;repo;titulo;prazo;peso;verificacao;situacao
     ├── entregas.csv         # o que o GitLab diz
     ├── notas.csv            # o que o professor decidiu
-    └── verificacoes.csv     # o que a suíte automatizada apurou
+    ├── verificacoes.csv     # o que a suíte automatizada apurou
+    └── equipes.csv          # quem entregou no fork de quem
 ```
 
 Os clones dos forks ficam fora do `.classroom/`, em

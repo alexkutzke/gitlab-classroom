@@ -182,3 +182,87 @@ func TestRemoverNota(t *testing.T) {
 		t.Error("remover duas vezes deveria devolver falso")
 	}
 }
+
+// --- entregas compartilhadas ---
+
+func turmaComDupla() *Turma {
+	return &Turma{
+		Alunos: []Aluno{
+			{GRR: "GRR1", Nome: "Ana", Situacao: Ativo},
+			{GRR: "GRR2", Nome: "Bruno", Situacao: Ativo},
+			{GRR: "GRR3", Nome: "Carla", Situacao: Ativo},
+		},
+		Vinculos: []Vinculo{
+			{Exercicio: "html", GRR: "GRR2", Dono: "GRR1", Origem: VinculoDescoberto},
+		},
+	}
+}
+
+func TestDonoEEquipe(t *testing.T) {
+	tur := turmaComDupla()
+
+	if got := tur.Dono("html", "GRR2"); got != "GRR1" {
+		t.Errorf("dono = %q, queria GRR1", got)
+	}
+	if got := tur.Dono("html", "GRR3"); got != "GRR3" {
+		t.Errorf("aluno sem vínculo é dono do próprio fork, veio %q", got)
+	}
+	if got := tur.Dono("js", "GRR2"); got != "GRR2" {
+		t.Errorf("o vínculo vale por exercício; em js veio %q", got)
+	}
+
+	if equipe := tur.Equipe("html", "GRR1"); len(equipe) != 2 {
+		t.Errorf("equipe pelo dono = %v, queria os dois", equipe)
+	}
+	if equipe := tur.Equipe("html", "GRR2"); len(equipe) != 2 {
+		t.Errorf("equipe pelo integrante = %v, queria os dois", equipe)
+	}
+	if !tur.Compartilhada("html", "GRR1") || tur.Compartilhada("html", "GRR3") {
+		t.Error("Compartilhada não separou quem entregou em dupla de quem entregou sozinho")
+	}
+}
+
+func TestSubstituirVinculosDescobertosPreservaOsManuais(t *testing.T) {
+	tur := turmaComDupla()
+	tur.RegistrarVinculo(Vinculo{Exercicio: "html", GRR: "GRR3", Dono: "GRR1", Origem: VinculoManual})
+	tur.RegistrarVinculo(Vinculo{Exercicio: "js", GRR: "GRR2", Dono: "GRR1", Origem: VinculoDescoberto})
+
+	// Nova coleta de html: Bruno não aparece mais como membro do fork.
+	tur.SubstituirVinculosDescobertos("html", nil)
+
+	if _, ok := tur.VinculosDoExercicio("html")["GRR2"]; ok {
+		t.Error("vínculo descoberto deveria sair quando a coleta não o encontra mais")
+	}
+	if v, ok := tur.VinculosDoExercicio("html")["GRR3"]; !ok || v.Origem != VinculoManual {
+		t.Error("vínculo cadastrado à mão não podia ser apagado pela coleta")
+	}
+	if _, ok := tur.VinculosDoExercicio("js")["GRR2"]; !ok {
+		t.Error("a coleta de html não podia mexer nos vínculos de js")
+	}
+}
+
+func TestVinculoManualVenceODescoberto(t *testing.T) {
+	tur := turmaComDupla()
+	tur.RegistrarVinculo(Vinculo{Exercicio: "html", GRR: "GRR2", Dono: "GRR3", Origem: VinculoManual})
+
+	tur.SubstituirVinculosDescobertos("html", []Vinculo{
+		{Exercicio: "html", GRR: "GRR2", Dono: "GRR1", Origem: VinculoDescoberto},
+	})
+
+	if got := tur.Dono("html", "GRR2"); got != "GRR3" {
+		t.Errorf("dono = %q, queria o cadastrado à mão", got)
+	}
+	if len(tur.VinculosDoExercicio("html")) != 1 {
+		t.Errorf("o mesmo aluno não pode ter dois vínculos: %+v", tur.Vinculos)
+	}
+}
+
+func TestRemoverVinculo(t *testing.T) {
+	tur := turmaComDupla()
+	if !tur.RemoverVinculo("html", "GRR2") {
+		t.Fatal("remoção não encontrou o vínculo")
+	}
+	if got := tur.Dono("html", "GRR2"); got != "GRR2" {
+		t.Errorf("depois de desvinculado, o dono é ele mesmo, veio %q", got)
+	}
+}

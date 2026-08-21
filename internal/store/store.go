@@ -27,6 +27,7 @@ const (
 	arqEntregas     = "entregas.csv"
 	arqNotas        = "notas.csv"
 	arqVerificacoes = "verificacoes.csv"
+	arqEquipes      = "equipes.csv"
 )
 
 // ErrNaoEncontrado indica que nenhum .classroom/ foi achado subindo a árvore.
@@ -99,6 +100,9 @@ func (s *Store) Carregar() (*turma.Turma, error) {
 	if t.Verificacoes, err = s.lerVerificacoes(); err != nil {
 		return nil, err
 	}
+	if t.Vinculos, err = s.lerVinculos(); err != nil {
+		return nil, err
+	}
 	t.Ordenar()
 	return t, nil
 }
@@ -121,7 +125,10 @@ func (s *Store) Gravar(t *turma.Turma) error {
 	if err := s.gravarNotas(t.Notas); err != nil {
 		return err
 	}
-	return s.gravarVerificacoes(t.Verificacoes)
+	if err := s.gravarVerificacoes(t.Verificacoes); err != nil {
+		return err
+	}
+	return s.gravarVinculos(t.Vinculos)
 }
 
 // GravarConfig escreve apenas o config.toml.
@@ -399,6 +406,49 @@ func (s *Store) gravarVerificacoes(vs []turma.Verificacao) error {
 		})
 	}
 	return gravarCSV(s.caminho(arqVerificacoes), linhas)
+}
+
+// --- equipes ---
+
+var cabecalhoEquipes = []string{"exercicio", "grr", "dono", "origem", "atualizado_em"}
+
+func (s *Store) lerVinculos() ([]turma.Vinculo, error) {
+	t, err := lerTabela(s.caminho(arqEquipes), cabecalhoEquipes, "exercicio")
+	if err != nil {
+		return nil, err
+	}
+	var out []turma.Vinculo
+	for i := range t.linhas {
+		quando, err := t.instante(i, "atualizado_em")
+		if err != nil {
+			return nil, err
+		}
+		origem := turma.OrigemVinculo(t.str(i, "origem"))
+		if origem == "" {
+			// Linha escrita à mão sem a coluna: tratar como decisão do
+			// professor é o seguro, porque a coleta não a apaga.
+			origem = turma.VinculoManual
+		}
+		out = append(out, turma.Vinculo{
+			Exercicio:    t.str(i, "exercicio"),
+			GRR:          turma.NormalizarGRR(t.str(i, "grr")),
+			Dono:         turma.NormalizarGRR(t.str(i, "dono")),
+			Origem:       origem,
+			AtualizadoEm: quando,
+		})
+	}
+	return out, nil
+}
+
+func (s *Store) gravarVinculos(vs []turma.Vinculo) error {
+	linhas := [][]string{cabecalhoEquipes}
+	for _, v := range vs {
+		linhas = append(linhas, []string{
+			v.Exercicio, v.GRR, v.Dono, string(v.Origem),
+			turma.FormatarInstante(v.AtualizadoEm),
+		})
+	}
+	return gravarCSV(s.caminho(arqEquipes), linhas)
 }
 
 // --- utilidades de CSV ---

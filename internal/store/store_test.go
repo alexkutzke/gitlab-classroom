@@ -37,6 +37,10 @@ func turmaExemplo() *turma.Turma {
 			Exercicio: "html", GRR: "GRR20259001", Valor: 85,
 			Comentario: "faltou o rodapé", CorrigidoEm: momento,
 		}},
+		Vinculos: []turma.Vinculo{{
+			Exercicio: "html", GRR: "GRR20259002", Dono: "GRR20259001",
+			Origem: turma.VinculoDescoberto, AtualizadoEm: momento,
+		}},
 	}
 	t.Config.Padroes()
 	return t
@@ -68,6 +72,12 @@ func TestGravarECarregarPreservaTudo(t *testing.T) {
 	}
 	if len(lida.Notas) != 1 || lida.Notas[0].Valor != 85 {
 		t.Errorf("nota não sobreviveu ao ciclo: %+v", lida.Notas)
+	}
+	if len(lida.Vinculos) != 1 || lida.Vinculos[0].Dono != "GRR20259001" {
+		t.Errorf("vínculo de equipe não sobreviveu ao ciclo: %+v", lida.Vinculos)
+	}
+	if lida.Vinculos[0].Origem != turma.VinculoDescoberto {
+		t.Errorf("origem do vínculo = %v", lida.Vinculos[0].Origem)
 	}
 	if !lida.Entregas[0].DataCommit.Equal(original.Entregas[0].DataCommit) {
 		t.Errorf("data do commit mudou: %v", lida.Entregas[0].DataCommit)
@@ -142,5 +152,30 @@ func TestDescobrirSobeAArvore(t *testing.T) {
 	}
 	if s.Pasta() != dir {
 		t.Errorf("Pasta = %q, queria %q", s.Pasta(), dir)
+	}
+}
+
+func TestVinculoSemColunaDeOrigemEhTratadoComoManual(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Criar(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.GravarConfig(turmaExemplo().Config); err != nil {
+		t.Fatal(err)
+	}
+	// Linha escrita à mão, sem a coluna origem: tratá-la como manual é o
+	// seguro, porque a coleta não apaga o que o professor afirmou.
+	conteudo := "exercicio;grr;dono\nhtml;GRR20259002;GRR20259001\n"
+	if err := os.WriteFile(filepath.Join(s.Raiz, arqEquipes), []byte(conteudo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lida, err := s.Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lida.Vinculos) != 1 || lida.Vinculos[0].Origem != turma.VinculoManual {
+		t.Errorf("vínculo lido = %+v", lida.Vinculos)
 	}
 }

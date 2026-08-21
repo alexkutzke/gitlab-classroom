@@ -53,8 +53,12 @@ func (m *modelo) lista() string {
 			cursor = estCursor.Render("> ")
 			nome = estCursor.Render(nome)
 		}
-		b.WriteString(fmt.Sprintf("%s%-34s %-30s %-22s %s\n",
-			cursor, truncar(nome, 34), m.situacao(it), m.verificacao(it), m.nota(it)))
+		marca := " "
+		if len(it.Equipe) > 0 {
+			marca = estFraco.Render("d")
+		}
+		b.WriteString(fmt.Sprintf("%s%s %-32s %-30s %-22s %s\n",
+			cursor, marca, truncar(nome, 32), m.situacao(it), m.verificacao(it), m.nota(it)))
 	}
 	if fim < len(m.visivel) {
 		b.WriteString(estFraco.Render(fmt.Sprintf("  ... mais %d\n", len(m.visivel)-fim)))
@@ -116,8 +120,14 @@ func (m *modelo) nota(it Item) string {
 func (m *modelo) rodape() string {
 	var b strings.Builder
 
-	if it := m.atual(); it != nil && it.comentario != "" {
-		b.WriteString(estFraco.Render("comentário: ") + truncar(it.comentario, m.largura-14) + "\n")
+	if it := m.atual(); it != nil {
+		if len(it.Equipe) > 0 {
+			b.WriteString(estFraco.Render("entrega em dupla com ") +
+				strings.Join(it.Equipe, ", ") + "\n")
+		}
+		if it.comentario != "" {
+			b.WriteString(estFraco.Render("comentário: ") + truncar(it.comentario, m.largura-14) + "\n")
+		}
 	}
 
 	switch m.modo {
@@ -137,9 +147,25 @@ func (m *modelo) rodape() string {
 		b.WriteString(estAviso.Render(m.aviso) + "\n")
 	}
 
-	b.WriteString(estFraco.Render(
-		"j k move   0-9/n nota   c comentário   r repete a última   x apaga   o abre no editor   / filtra   enter grava   q sai"))
+	atalhos := "j k move   0-9/n nota   c comentário   r repete a última   x apaga   o abre no editor   / filtra   enter grava   q sai"
+	if temEquipe(m.itens) {
+		estado := "ligada"
+		if !m.propagar {
+			estado = "desligada"
+		}
+		atalhos += "\nD nota da dupla nos dois integrantes: " + estado
+	}
+	b.WriteString(estFraco.Render(atalhos))
 	return b.String()
+}
+
+func temEquipe(itens []Item) bool {
+	for _, i := range itens {
+		if len(i.Equipe) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func truncar(s string, n int) string {
