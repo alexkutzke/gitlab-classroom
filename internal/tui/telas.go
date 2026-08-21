@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -153,20 +154,36 @@ type vinculoNaTela struct {
 	Dono       string
 }
 
+// lista monta as linhas da tela.
+//
+// A ordem precisa ser estável: o desenho e o tratamento de tecla chamam esta
+// função separadamente, e duas ordens diferentes fariam o `d` desfazer o
+// vínculo de outro aluno. VinculosDoExercicio devolve um map, e percorrer map
+// em Go dá uma ordem nova a cada vez.
 func (tq *telaEquipes) lista(a *App) []vinculoNaTela {
+	nome := func(grr string) string {
+		if al, ok := a.turma.AlunoPorGRR(grr); ok {
+			return al.Nome
+		}
+		return grr
+	}
 	var out []vinculoNaTela
 	for _, e := range a.turma.ExerciciosAtivos() {
+		// A ordenação é por exercício, e não da lista toda, para os
+		// exercícios ficarem na ordem do semestre.
+		inicio := len(out)
 		for _, v := range a.turma.VinculosDoExercicio(e.ID) {
-			nome := func(grr string) string {
-				if al, ok := a.turma.AlunoPorGRR(grr); ok {
-					return al.Nome
-				}
-				return grr
-			}
 			out = append(out, vinculoNaTela{
 				Vinculo: v, Integrante: nome(v.GRR), Dono: nome(v.Dono),
 			})
 		}
+		bloco := out[inicio:]
+		sort.Slice(bloco, func(i, j int) bool {
+			if bloco[i].Integrante != bloco[j].Integrante {
+				return bloco[i].Integrante < bloco[j].Integrante
+			}
+			return bloco[i].Vinculo.GRR < bloco[j].Vinculo.GRR
+		})
 	}
 	return out
 }

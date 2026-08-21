@@ -86,6 +86,14 @@ type Cliente interface {
 	// Membros lista quem está associado a um projeto, herança de grupo
 	// incluída.
 	Membros(projeto string) ([]Membro, error)
+	// Renovar descarta as listagens memorizadas.
+	//
+	// O cache existe para os oito trabalhadores de uma coleta não pedirem a
+	// mesma listagem ao mesmo tempo, e o tempo de vida dele é o de uma
+	// operação. Na linha de comando o processo termina e o cache vai junto;
+	// na TUI o cliente dura a sessão inteira, e sem isto a segunda coleta
+	// responderia do cache, escondendo o grupo que o aluno acabou de criar.
+	Renovar()
 }
 
 // paginaMaxima limita a varredura de commits de um repositório de exercício.
@@ -110,6 +118,14 @@ type clienteAPI struct {
 	projetos *cache[[]Projeto]
 	commits  *cache[[]Commit]
 	membros  *cache[[]Membro]
+}
+
+// Renovar descarta as listagens memorizadas na sessão anterior.
+func (g *clienteAPI) Renovar() {
+	g.grupos.limpar()
+	g.projetos.limpar()
+	g.commits.limpar()
+	g.membros.limpar()
 }
 
 // Novo abre um cliente autenticado.

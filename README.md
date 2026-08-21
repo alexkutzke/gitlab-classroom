@@ -139,7 +139,7 @@ O que o sync distingue, e que a mensagem única "fork não encontrado" escondia:
 |---|---|
 | `ok` | grupo com o nome do padrão, professor associado |
 | `grupo_divergente` | grupo acessível, com outro nome; o relatório mostra qual |
-| `sem_acesso` | grupo existe e é visível, mas sem o professor como reporter |
+| `sem_acesso` | grupo existe e é visível, mas sem o professor como reporter. A entrega ainda é coletada quando o grupo abre, o que é comum no fork de um modelo da disciplina |
 | `sem_conta` | nenhum usuário com o GRR no gitlab.com |
 | `grupo_invisivel` | o grupo não foi criado, ou foi criado privado sem compartilhar. A API não separa os dois casos |
 
@@ -322,7 +322,8 @@ classroom alunos editar --grr GRR20259001 --grupo ds122-noturno-ana \
 
 Com o login cadastrado, a coleta passa a procurar o grupo pelos dois nomes, o
 do padrão com o GRR e o do padrão com o login, e a checagem de conta usa o
-login. O grupo fixado com `--grupo` tem prioridade sobre os dois.
+login. O grupo fixado com `--grupo` entra na busca depois desses dois, e é
+usado quando nenhum deles existe.
 
 Nome, e-mail e situação não se editam por aqui: vêm do SIGA e voltariam no
 próximo `sync`.

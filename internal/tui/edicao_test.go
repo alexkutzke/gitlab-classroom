@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,6 +112,56 @@ func TestDesvincularPedeConfirmacao(t *testing.T) {
 	teclar(a, "d", "s") // pede de novo e confirma
 	if len(a.turma.Vinculos) != 0 {
 		t.Errorf("o vínculo deveria ter sido desfeito: %+v", a.turma.Vinculos)
+	}
+}
+
+// A lista da tela de equipes nasce de um map, e map em Go tem ordem nova a
+// cada percurso. Sem ordenação, a tela embaralha a cada tecla e o `d` desfaz
+// o vínculo de quem não estava sob o cursor.
+func TestAListaDeEquipesTemOrdemEstavel(t *testing.T) {
+	a := appExemplo(t)
+	for _, v := range []turma.Vinculo{
+		{Exercicio: "prepare", GRR: "GRR20259002", Dono: "GRR20259001", Origem: turma.VinculoManual},
+		{Exercicio: "prepare", GRR: "GRR20259003", Dono: "GRR20259001", Origem: turma.VinculoDescoberto},
+		{Exercicio: "html", GRR: "GRR20259002", Dono: "GRR20259001", Origem: turma.VinculoDescoberto},
+	} {
+		a.turma.RegistrarVinculo(v)
+	}
+
+	primeira := nomesNaListaDeEquipes(a)
+	for i := 0; i < 20; i++ {
+		if got := nomesNaListaDeEquipes(a); !slices.Equal(got, primeira) {
+			t.Fatalf("percurso %d = %v, primeiro = %v", i, got, primeira)
+		}
+	}
+}
+
+func nomesNaListaDeEquipes(a *App) []string {
+	var out []string
+	for _, v := range a.equipes.lista(a) {
+		out = append(out, v.Vinculo.Exercicio+"/"+v.Vinculo.GRR)
+	}
+	return out
+}
+
+func TestDesvincularApagaOVinculoSobOCursor(t *testing.T) {
+	a := appExemplo(t)
+	for _, v := range []turma.Vinculo{
+		{Exercicio: "prepare", GRR: "GRR20259002", Dono: "GRR20259001", Origem: turma.VinculoManual},
+		{Exercicio: "prepare", GRR: "GRR20259003", Dono: "GRR20259001", Origem: turma.VinculoDescoberto},
+	} {
+		a.turma.RegistrarVinculo(v)
+	}
+
+	teclar(a, "e", "j") // segunda linha
+	alvo := a.equipes.lista(a)[a.equipes.cursor].Vinculo
+	teclar(a, "d", "s")
+
+	if len(a.turma.Vinculos) != 1 {
+		t.Fatalf("vínculos = %+v, queria 1", a.turma.Vinculos)
+	}
+	if v := a.turma.Vinculos[0]; v.Exercicio == alvo.Exercicio && v.GRR == alvo.GRR {
+		t.Errorf("apagou o vínculo errado: sobrou %+v, o cursor estava em %+v", v, alvo)
 	}
 }
 

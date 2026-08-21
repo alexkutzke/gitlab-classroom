@@ -18,7 +18,11 @@ type clienteFalso struct {
 	grupos   map[string]gl.Grupo
 	projetos map[string][]gl.Projeto
 	commits  map[string][]gl.Commit
+	// renovacoes conta os pedidos de descarte do cache.
+	renovacoes int
 }
+
+func (c *clienteFalso) Renovar() { c.renovacoes++ }
 
 func (c *clienteFalso) UsuarioExiste(login string) (bool, error) { return true, nil }
 
@@ -136,6 +140,23 @@ func TestColetaPeloPainelGravaEResume(t *testing.T) {
 	}
 	if len(a.tarefas.linhas) == 0 {
 		t.Error("a operação deveria ficar registrada na tela de tarefas")
+	}
+}
+
+// O cliente do GitLab dura a sessão inteira na TUI, e as listagens dele são
+// memorizadas. Sem descartar o cache a cada coleta, o grupo que o aluno
+// acabou de criar só apareceria depois de fechar e reabrir a aplicação.
+func TestCadaColetaDescartaOCacheDoCliente(t *testing.T) {
+	c := clienteComEntrega()
+	a := appComCliente(t, c)
+
+	bombear(t, a, teclarCmd(a, "c"))
+	if c.renovacoes != 1 {
+		t.Fatalf("renovações = %d, queria 1", c.renovacoes)
+	}
+	bombear(t, a, teclarCmd(a, "c"))
+	if c.renovacoes != 2 {
+		t.Errorf("renovações = %d: a segunda coleta também precisa partir do zero", c.renovacoes)
 	}
 }
 

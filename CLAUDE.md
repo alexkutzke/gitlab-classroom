@@ -121,7 +121,12 @@ Duas armadilhas já cobraram caro, e o código carrega defesa contra as duas:
   resolvido, para achar o grupo com nome fora do padrão.
 
 Todo cache do cliente faz busca única por chave: sem isso, os oito
-trabalhadores partem juntos e cada um busca a mesma listagem.
+trabalhadores partem juntos e cada um busca a mesma listagem. O tempo de vida
+do cache é o de **uma operação**, e não o do cliente: `acoes.Coletar` e
+`acoes.Sincronizar` chamam `Cliente.Renovar()` na entrada. Na linha de comando
+isso é redundante, porque o processo morre a cada comando; na TUI o cliente
+dura a sessão, e sem o descarte a segunda coleta responderia do cache,
+escondendo o grupo ou o commit que apareceu desde a primeira.
 
 Ordem em que a situação da conta é apurada, que também é ordem de custo:
 listagem da turma, consulta direta ao grupo, associação dirigida, busca pelo
@@ -129,6 +134,13 @@ GRR e, por último, existência da conta. A busca vem antes da conta de
 propósito: o aluno que não conseguiu criar a conta com o GRR ainda pode ter um
 grupo com o GRR no nome, e perguntar primeiro pela conta esconderia a entrega
 dele.
+
+Entre os nomes candidatos, os do padrão vêm antes do grupo gravado no
+cadastro. O aluno que erra o nome do grupo costuma criar um grupo novo com o
+nome certo em vez de mudar a URL do primeiro, e os dois passam a existir:
+insistir no gravado deixaria a coleta presa no grupo abandonado. Fixar um nome
+fora do padrão com `alunos editar --grupo` continua valendo, porque nesse caso
+não existe grupo com o nome esperado para competir.
 
 ## Acesso ao GitLab
 
@@ -278,6 +290,11 @@ Duas escolhas que valem manter:
   aparece sem o professor associado.
 - `erro` é falha de rede ou de API, e não veredito sobre o aluno. Recoletar
   resolve, e por isso ele não se mistura às demais situações.
+- `sem_acesso` bloqueia a entrega só quando o grupo também não abre. O grupo
+  sem a associação do professor costuma continuar legível, porque o
+  repositório é fork de um modelo da disciplina, e nesse caso a entrega conta:
+  a falta do convite fica como pendência de cadastro, e não como entrega
+  perdida.
 
 Regras:
 

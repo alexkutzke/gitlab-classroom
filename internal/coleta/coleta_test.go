@@ -23,7 +23,11 @@ type clienteFalso struct {
 	// erroMembros imita a consulta de membros indisponível, que é a falha que
 	// desliga a descoberta de entregas em dupla.
 	erroMembros error
+	// renovacoes conta os pedidos de descarte do cache.
+	renovacoes int
 }
+
+func (c *clienteFalso) Renovar() { c.renovacoes++ }
 
 func (c *clienteFalso) UsuarioExiste(login string) (bool, error) {
 	for _, u := range c.usuarios {
@@ -259,10 +263,16 @@ func TestGrupoComNomeForaDoPadraoAindaEncontraOFork(t *testing.T) {
 	}
 }
 
-func TestGrupoVisivelSemOProfessorAssociado(t *testing.T) {
+// Falta de associação vira aviso de cadastro, e não descarte da entrega: o
+// grupo do aluno costuma continuar legível quando o repositório é fork de um
+// modelo da disciplina.
+func TestGrupoLegivelSemOProfessorAssociadoAindaTemAEntregaColetada(t *testing.T) {
 	c := baseFalsa()
 	c.grupos[grupoAna] = gl.Grupo{ID: 1, Caminho: grupoAna}
 	c.meus = nil
+	c.commits[grupoAna+"/ds122-html-assignment"] = []gl.Commit{
+		{SHA: "aluno1", Data: time.Date(2026, 9, 1, 10, 0, 0, 0, time.Local)},
+	}
 
 	col := &Coletor{Cliente: c, Config: configExemplo()}
 	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
@@ -272,8 +282,27 @@ func TestGrupoVisivelSemOProfessorAssociado(t *testing.T) {
 	if res.Alunos[0].SituacaoConta != turma.ContaSemAcesso {
 		t.Errorf("conta = %v, queria sem_acesso", res.Alunos[0].SituacaoConta)
 	}
+	if res.Entregas[0].Situacao != turma.Entregue {
+		t.Errorf("situação = %v, queria entregue", res.Entregas[0].Situacao)
+	}
+}
+
+func TestGrupoSemAssociacaoEIlegivelFicaComoSemAcesso(t *testing.T) {
+	c := baseFalsa()
+	c.grupos[grupoAna] = gl.Grupo{ID: 1, Caminho: grupoAna}
+	c.meus = nil
+	c.projetos = nil // o grupo existe no cadastro do GitLab, mas não abre
+
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if res.Entregas[0].Situacao != turma.SemAcesso {
 		t.Errorf("situação = %v, queria sem_acesso", res.Entregas[0].Situacao)
+	}
+	if res.Entregas[0].Projeto != grupoAna {
+		t.Errorf("projeto = %q, queria o grupo para o aviso apontar para algum lugar", res.Entregas[0].Projeto)
 	}
 }
 
@@ -410,6 +439,78 @@ func TestGrupoFixadoAMaoTemPrioridade(t *testing.T) {
 	}
 	if res.Entregas[0].Situacao != turma.Entregue {
 		t.Errorf("o grupo fixado à mão deveria ser usado: %+v", res.Entregas[0])
+	}
+}
+
+// O caso da aluna que digitou um dígito a mais no nome do grupo, percebeu o
+// erro e criou um grupo novo com o nome certo em vez de mudar a URL do
+// primeiro. Os dois passam a existir, e o gravado é o errado.
+func TestGrupoNovoComNomeCertoVenceOGravadoComNomeErrado(t *testing.T) {
+	errado := grupoAna + "1"
+	c := baseFalsa() // baseFalsa já traz o grupo certo, com o fork e o professor
+	c.grupos[errado] = gl.Grupo{ID: 5, Caminho: errado, Membro: true}
+	c.meus = append(c.meus, c.grupos[errado])
+	c.projetos[errado] = []gl.Projeto{{
+		ID: 14, Caminho: "teste", Completo: errado + "/teste", RamoPadrao: "main",
+	}}
+	c.commits[grupoAna+"/ds122-html-assignment"] = []gl.Commit{
+		{SHA: "aluno1", Data: time.Date(2026, 9, 1, 10, 0, 0, 0, time.Local)},
+	}
+
+	aluna := ana()
+	aluna.Grupo = errado
+
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar(context.Background(), []turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Alunos[0].Grupo != grupoAna {
+		t.Errorf("grupo = %q, queria o do padrão: o abandonado não pode prender a coleta", res.Alunos[0].Grupo)
+	}
+	if res.Alunos[0].SituacaoConta != turma.ContaOK {
+		t.Errorf("conta = %v, queria conta_ok", res.Alunos[0].SituacaoConta)
+	}
+	if res.Entregas[0].Situacao != turma.Entregue {
+		t.Errorf("a entrega está no grupo novo e deveria ser achada: %+v", res.Entregas[0])
+	}
+}
+
+// A aluna criou o grupo com o nome certo, errou o nome num segundo grupo e
+// adicionou o professor só nesse segundo. A associação aponta para o grupo
+// vazio, e o trabalho está no outro.
+func TestConviteNoGrupoErradoNaoEscondeOGrupoDoPadrao(t *testing.T) {
+	errado := grupoAna + "1"
+	c := baseFalsa()
+	certo := c.grupos[grupoAna]
+	certo.Membro = false
+	c.grupos[grupoAna] = certo // existe e é legível, mas sem o professor
+	c.grupos[errado] = gl.Grupo{ID: 5, Caminho: errado, Membro: true}
+	c.meus = []gl.Grupo{c.grupos[errado]} // o convite ficou só aqui
+	c.projetos[errado] = []gl.Projeto{{
+		ID: 14, Caminho: "teste", Completo: errado + "/teste", RamoPadrao: "main",
+	}}
+	c.commits[grupoAna+"/ds122-html-assignment"] = []gl.Commit{
+		{SHA: "aluno1", Data: time.Date(2026, 9, 1, 10, 0, 0, 0, time.Local)},
+	}
+
+	aluna := ana()
+	aluna.Grupo = errado
+
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar(context.Background(), []turma.Aluno{aluna}, []turma.Exercicio{exercicioExemplo()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Alunos[0].Grupo != grupoAna {
+		t.Errorf("grupo = %q, queria o do padrão", res.Alunos[0].Grupo)
+	}
+	if res.Alunos[0].SituacaoConta != turma.ContaSemAcesso {
+		t.Errorf("conta = %v, queria sem_acesso: o professor precisa ser convidado no grupo certo",
+			res.Alunos[0].SituacaoConta)
+	}
+	if res.Entregas[0].Situacao != turma.Entregue {
+		t.Errorf("situação = %v, queria entregue: o fork está no grupo do padrão", res.Entregas[0].Situacao)
 	}
 }
 

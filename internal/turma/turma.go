@@ -124,8 +124,11 @@ func (e Exercicio) Validar() error {
 type SituacaoEntrega string
 
 const (
-	// SemConta, SemAcesso e GrupoInvisivel são problemas anteriores à
-	// entrega: o aluno não chegou a ter onde publicar o fork.
+	// SemConta e GrupoInvisivel são problemas anteriores à entrega: o aluno
+	// não chegou a ter onde publicar o fork. SemAcesso só vira situação de
+	// entrega quando o grupo também não abre: grupo legível sem a associação
+	// do professor tem a entrega coletada normalmente, e a falta de convite
+	// fica como pendência de cadastro.
 	SemConta       SituacaoEntrega = "sem_conta"
 	SemAcesso      SituacaoEntrega = "sem_acesso"
 	GrupoInvisivel SituacaoEntrega = "grupo_invisivel"

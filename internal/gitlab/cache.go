@@ -55,3 +55,13 @@ func (c *cache[T]) obter(chave string, buscar func() (T, error)) (T, error) {
 		return v, err
 	}
 }
+
+// limpar descarta os valores memorizados.
+//
+// As buscas em curso seguem até o fim e guardam o resultado delas: limpar só
+// é chamado entre operações, quando não há trabalhador rodando.
+func (c *cache[T]) limpar() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	clear(c.valores)
+}

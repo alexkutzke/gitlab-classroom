@@ -101,34 +101,50 @@ func (c *Coletor) avisar(feito, total int, fase, item string) {
 
 // resolverGrupo procura o grupo do aluno e classifica o que foi encontrado.
 //
-// A ordem das tentativas é: o grupo já gravado (que pode ter sido fixado à
-// mão), o nome do padrão com o GRR, o nome do padrão com o usuário cadastrado
-// (que difere do GRR quando o aluno não conseguiu criar a conta com ele), e
-// por último a lista de grupos do professor, que é onde aparece quem batizou
-// o grupo de outro jeito.
+// A ordem das tentativas é: o nome do padrão com o GRR, o nome do padrão com
+// o usuário cadastrado (que difere do GRR quando o aluno não conseguiu criar
+// a conta com ele), o grupo já gravado, e por último a lista de grupos do
+// professor, que é onde aparece quem batizou o grupo de outro jeito.
+//
+// O nome esperado vem antes do gravado por causa do aluno que erra o nome,
+// descobre o erro e cria um grupo novo em vez de mudar a URL do primeiro. Os
+// dois passam a existir, e insistir no gravado deixaria a coleta presa no
+// grupo abandonado enquanto o fork está no outro. Fixar à mão um nome fora do
+// padrão continua valendo: nesse caso não há grupo com o nome esperado para
+// competir.
 func (c *Coletor) resolverGrupo(a turma.Aluno) (string, turma.SituacaoConta) {
 	esperados := c.esperados(a)
 
 	var candidatos []string
-	if a.Grupo != "" {
-		candidatos = append(candidatos, a.Grupo)
-	}
 	for _, e := range esperados {
-		if e != "" && e != a.Grupo {
+		if e != "" {
 			candidatos = append(candidatos, e)
 		}
+	}
+	if a.Grupo != "" && !contem(esperados, a.Grupo) {
+		candidatos = append(candidatos, a.Grupo)
 	}
 
 	// A listagem dos grupos da turma responde de uma vez, para todos os
 	// alunos, a pergunta cara: em quais deles o professor é reporter.
 	meus := c.gruposDaTurma()
 	for _, cand := range candidatos {
-		if g, ok := meus[strings.ToLower(cand)]; ok {
-			if !contem(esperados, g.Caminho) {
-				return g.Caminho, turma.ContaGrupoDivergente
-			}
+		g, ok := meus[strings.ToLower(cand)]
+		if !ok {
+			continue
+		}
+		if contem(esperados, g.Caminho) {
 			return g.Caminho, turma.ContaOK
 		}
+		// Associação a um grupo fora do padrão. Antes de aceitar, conferir se
+		// existe um com o nome esperado: o aluno que erra o nome costuma
+		// criar um grupo novo em vez de mudar a URL, e esquecer de repetir o
+		// convite. O trabalho fica no grupo novo, e apontar para o antigo
+		// esconderia a entrega.
+		if outro := c.grupoEsperadoVisivel(esperados); outro != "" {
+			return outro, turma.ContaSemAcesso
+		}
+		return g.Caminho, turma.ContaGrupoDivergente
 	}
 
 	// Fora da listagem da turma: o grupo pode ter nome que não casa com o
@@ -168,6 +184,21 @@ func (c *Coletor) resolverGrupo(a turma.Aluno) (string, turma.SituacaoConta) {
 		return "", turma.ContaSemUsuario
 	}
 	return "", turma.ContaGrupoInvisivel
+}
+
+// grupoEsperadoVisivel devolve o primeiro nome do padrão que existe no
+// GitLab, mesmo sem o professor associado. Só é consultado para o aluno cuja
+// associação caiu num grupo fora do padrão, que são poucos por turma.
+func (c *Coletor) grupoEsperadoVisivel(esperados []string) string {
+	for _, e := range esperados {
+		if e == "" {
+			continue
+		}
+		if g, err := c.Cliente.Grupo(e); err == nil && g != nil {
+			return g.Caminho
+		}
+	}
+	return ""
 }
 
 // gruposDaTurma devolve, por caminho em minúsculas, os grupos da turma em que
@@ -365,7 +396,13 @@ func (c *Coletor) coletarAluno(a turma.Aluno, exercicios []turma.Exercicio, eq e
 // projetosDoAluno devolve os repositórios do grupo do aluno, ou o erro que
 // impediu de olhar.
 func (c *Coletor) projetosDoAluno(a turma.Aluno) ([]gl.Projeto, error) {
-	if _, bloqueado := situacaoBloqueio(a.SituacaoConta); bloqueado {
+	if a.Grupo == "" {
+		return nil, nil
+	}
+	// sem_acesso não impede de olhar: grupo sem a associação do professor
+	// costuma continuar legível quando o repositório é fork de um modelo da
+	// disciplina, e nesse caso a entrega conta.
+	if sit, bloqueado := situacaoBloqueio(a.SituacaoConta); bloqueado && sit != turma.SemAcesso {
 		return nil, nil
 	}
 	return c.Cliente.ProjetosDoGrupo(a.Grupo)
@@ -378,9 +415,13 @@ func (c *Coletor) coletarNoGrupo(a turma.Aluno, e turma.Exercicio, projetos []gl
 	base := turma.Entrega{Exercicio: e.ID, GRR: a.GRR, ColetadoEm: agora}
 
 	if sit, bloqueado := situacaoBloqueio(a.SituacaoConta); bloqueado {
-		base.Situacao, base.Projeto = sit, a.Grupo
-		// Aluno sem grupo próprio ainda pode ter entregado no fork do colega.
-		return base, false
+		if sit != turma.SemAcesso || erroDoGrupo != nil || len(projetos) == 0 {
+			base.Situacao, base.Projeto = sit, a.Grupo
+			// Aluno sem grupo próprio ainda pode ter entregado no fork do
+			// colega.
+			return base, false
+		}
+		// Grupo legível apesar da falta de associação: segue a coleta normal.
 	}
 	if erroDoGrupo != nil {
 		base.Situacao, base.Detalhe = turma.Erro, erroDoGrupo.Error()

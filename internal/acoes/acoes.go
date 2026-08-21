@@ -151,6 +151,7 @@ func Sincronizar(ctx context.Context, t *turma.Turma, pastaTurma string, cli gl.
 	if cli == nil {
 		return res, fmt.Errorf("sem conexão com o GitLab")
 	}
+	cli.Renovar()
 
 	ativos := t.Ativos()
 	col := &coleta.Coletor{
@@ -209,6 +210,11 @@ func Coletar(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios []t
 	if cli == nil {
 		return res, fmt.Errorf("sem conexão com o GitLab")
 	}
+	// O cliente pode vir de uma operação anterior, com as listagens do GitLab
+	// memorizadas. Descartar aqui é o que faz a coleta enxergar o grupo ou o
+	// commit que apareceu desde a última.
+	cli.Renovar()
+
 	alunos := t.Ativos()
 	if len(alunos) == 0 {
 		return res, fmt.Errorf("nenhum aluno ativo: rode `classroom sync` para importar o cadastro")
