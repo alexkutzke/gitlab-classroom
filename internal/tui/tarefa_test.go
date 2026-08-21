@@ -30,10 +30,19 @@ func (c *clienteFalso) Grupo(caminho string) (*gl.Grupo, error) {
 	return &g, nil
 }
 
-func (c *clienteFalso) GruposDoProfessor() ([]gl.Grupo, error) {
+func (c *clienteFalso) Eu() (string, error) { return "alexkutzke", nil }
+
+func (c *clienteFalso) MembroDoGrupo(caminho string) (bool, error) {
+	g, ok := c.grupos[caminho]
+	return ok && g.Membro, nil
+}
+
+func (c *clienteFalso) GruposComAcesso(busca string) ([]gl.Grupo, error) {
 	var out []gl.Grupo
 	for _, g := range c.grupos {
-		out = append(out, g)
+		if busca == "" || strings.Contains(strings.ToLower(g.Caminho), strings.ToLower(busca)) {
+			out = append(out, g)
+		}
 	}
 	return out, nil
 }
@@ -46,7 +55,6 @@ func (c *clienteFalso) Commits(projeto, ramo string, todos bool) ([]gl.Commit, e
 	return c.commits[projeto], nil
 }
 
-func (c *clienteFalso) Forks(modelo string) ([]gl.Projeto, error)   { return nil, nil }
 func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) { return nil, nil }
 
 func clienteComEntrega() *clienteFalso {

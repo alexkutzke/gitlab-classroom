@@ -61,17 +61,28 @@ type Cliente interface {
 	// Grupo devolve o grupo pelo caminho completo, ou nil quando ele não é
 	// visível para o token em uso.
 	Grupo(caminho string) (*Grupo, error)
-	// GruposDoProfessor lista os grupos em que o dono do token participa com
-	// acesso de reporter ou mais. É a lista que revela o grupo do aluno que
-	// errou o nome.
-	GruposDoProfessor() ([]Grupo, error)
+	// GruposComAcesso lista os grupos em que o dono do token participa com
+	// acesso de reporter ou mais e cujo nome casa com a busca. É a lista que
+	// revela o grupo do aluno que errou o nome.
+	//
+	// A busca importa: quem dá aula há alguns semestres acumula centenas de
+	// grupos, e a listagem completa leva dezenas de segundos. Filtrar pelo
+	// prefixo da turma resolve em uma requisição.
+	GruposComAcesso(busca string) ([]Grupo, error)
+	// Eu devolve o login do dono do token. Serve de teste de conexão barato.
+	Eu() (string, error)
+	// MembroDoGrupo informa se o dono do token participa do grupo com acesso
+	// de reporter ou mais, com uma consulta dirigida.
+	//
+	// É o caminho barato para a pergunta: a busca por nome tem limite
+	// próprio no gitlab.com e passa a devolver 429 quando se faz uma por
+	// aluno.
+	MembroDoGrupo(caminho string) (bool, error)
 	// ProjetosDoGrupo lista os repositórios de um grupo.
 	ProjetosDoGrupo(grupo string) ([]Projeto, error)
 	// Commits lista os commits de um projeto. Ramo vazio usa o ramo padrão;
 	// todos inclui os commits de qualquer ramo.
 	Commits(projeto string, ramo string, todos bool) ([]Commit, error)
-	// Forks lista os forks visíveis de um projeto-modelo.
-	Forks(modelo string) ([]Projeto, error)
 	// Membros lista quem está associado a um projeto, herança de grupo
 	// incluída.
 	Membros(projeto string) ([]Membro, error)
@@ -85,15 +96,20 @@ const paginaMaxima = 20
 const porPagina = 100
 
 // clienteAPI implementa Cliente sobre a biblioteca oficial.
+//
+// Toda listagem passa por um cache com busca única: a coleta roda oito
+// trabalhadores em paralelo e vários deles pedem a mesma coisa ao mesmo tempo,
+// em especial os grupos do professor e os commits do repositório-modelo.
 type clienteAPI struct {
 	c *api.Client
 
-	mu       sync.Mutex
-	grupos   []Grupo // cache de GruposDoProfessor
-	projetos map[string][]Projeto
-	commits  map[string][]Commit
-	forks    map[string][]Projeto
-	membros  map[string][]Membro
+	muEu sync.Mutex
+	eu   *api.User
+
+	grupos   *cache[[]Grupo]
+	projetos *cache[[]Projeto]
+	commits  *cache[[]Commit]
+	membros  *cache[[]Membro]
 }
 
 // Novo abre um cliente autenticado.
@@ -111,10 +127,10 @@ func Novo(host, token string) (Cliente, error) {
 	}
 	return &clienteAPI{
 		c:        c,
-		projetos: map[string][]Projeto{},
-		commits:  map[string][]Commit{},
-		forks:    map[string][]Projeto{},
-		membros:  map[string][]Membro{},
+		grupos:   novoCache[[]Grupo](),
+		projetos: novoCache[[]Projeto](),
+		commits:  novoCache[[]Commit](),
+		membros:  novoCache[[]Membro](),
 	}, nil
 }
 
@@ -137,207 +153,170 @@ func (g *clienteAPI) Grupo(caminho string) (*Grupo, error) {
 		}
 		return nil, traduzirErro(err, "consultando o grupo "+caminho)
 	}
+	// GetGroup enxerga grupo público sem associação nenhuma, então quem
+	// decide se o professor é reporter é a listagem filtrada de grupos dele,
+	// consultada por quem chama.
 	out := converterGrupo(gr)
-	// GetGroup enxerga grupo público sem associação nenhuma. Quem decide se o
-	// professor tem acesso de reporter é a lista de grupos dele.
-	meus, err := g.GruposDoProfessor()
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range meus {
-		if m.ID == out.ID {
-			out.Membro = true
-			break
-		}
-	}
 	return &out, nil
 }
 
-func (g *clienteAPI) GruposDoProfessor() ([]Grupo, error) {
-	g.mu.Lock()
-	if g.grupos != nil {
-		defer g.mu.Unlock()
-		return g.grupos, nil
+func (g *clienteAPI) Eu() (string, error) {
+	u, err := g.usuarioAtual()
+	if err != nil {
+		return "", err
 	}
-	g.mu.Unlock()
+	return u.Username, nil
+}
 
-	var out []Grupo
-	opt := &api.ListGroupsOptions{
-		MinAccessLevel: api.Ptr(api.ReporterPermissions),
-		ListOptions:    api.ListOptions{PerPage: porPagina, Page: 1},
+// usuarioAtual guarda o dono do token, consultado uma vez por sessão.
+func (g *clienteAPI) usuarioAtual() (*api.User, error) {
+	g.muEu.Lock()
+	defer g.muEu.Unlock()
+	if g.eu != nil {
+		return g.eu, nil
 	}
-	for {
-		grs, resp, err := g.c.Groups.ListGroups(opt)
-		if err != nil {
-			return nil, traduzirErro(err, "listando os seus grupos")
-		}
-		for _, gr := range grs {
-			x := converterGrupo(gr)
-			x.Membro = true
-			out = append(out, x)
-		}
-		if resp == nil || resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
+	u, _, err := g.c.Users.CurrentUser()
+	if err != nil {
+		return nil, traduzirErro(err, "consultando o dono do token")
 	}
+	g.eu = u
+	return u, nil
+}
 
-	g.mu.Lock()
-	g.grupos = out
-	g.mu.Unlock()
-	return out, nil
+func (g *clienteAPI) MembroDoGrupo(caminho string) (bool, error) {
+	eu, err := g.usuarioAtual()
+	if err != nil {
+		return false, err
+	}
+	m, resp, err := g.c.GroupMembers.GetInheritedGroupMember(caminho, eu.ID)
+	if err != nil {
+		if resp != nil && (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden) {
+			return false, nil
+		}
+		return false, traduzirErro(err, "conferindo a sua associação a "+caminho)
+	}
+	return m != nil && m.AccessLevel >= api.ReporterPermissions, nil
+}
+
+func (g *clienteAPI) GruposComAcesso(busca string) ([]Grupo, error) {
+	return g.grupos.obter(busca, func() ([]Grupo, error) {
+		var out []Grupo
+		opt := &api.ListGroupsOptions{
+			MinAccessLevel: api.Ptr(api.ReporterPermissions),
+			ListOptions:    api.ListOptions{PerPage: porPagina, Page: 1},
+		}
+		if busca != "" {
+			opt.Search = api.Ptr(busca)
+		}
+		for {
+			grs, resp, err := g.c.Groups.ListGroups(opt)
+			if err != nil {
+				return nil, traduzirErro(err, "listando os seus grupos")
+			}
+			for _, gr := range grs {
+				x := converterGrupo(gr)
+				x.Membro = true
+				out = append(out, x)
+			}
+			if resp == nil || resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
+		}
+		return out, nil
+	})
 }
 
 func (g *clienteAPI) ProjetosDoGrupo(grupo string) ([]Projeto, error) {
-	g.mu.Lock()
-	if p, ok := g.projetos[grupo]; ok {
-		g.mu.Unlock()
-		return p, nil
-	}
-	g.mu.Unlock()
-
-	var out []Projeto
-	opt := &api.ListGroupProjectsOptions{
-		IncludeSubGroups: api.Ptr(true),
-		ListOptions:      api.ListOptions{PerPage: porPagina, Page: 1},
-	}
-	for {
-		ps, resp, err := g.c.Groups.ListGroupProjects(grupo, opt)
-		if err != nil {
-			if resp != nil && resp.StatusCode == http.StatusNotFound {
-				return nil, nil
+	return g.projetos.obter(grupo, func() ([]Projeto, error) {
+		var out []Projeto
+		opt := &api.ListGroupProjectsOptions{
+			IncludeSubGroups: api.Ptr(true),
+			ListOptions:      api.ListOptions{PerPage: porPagina, Page: 1},
+		}
+		for {
+			ps, resp, err := g.c.Groups.ListGroupProjects(grupo, opt)
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					return nil, nil
+				}
+				return nil, traduzirErro(err, "listando os projetos de "+grupo)
 			}
-			return nil, traduzirErro(err, "listando os projetos de "+grupo)
+			for _, p := range ps {
+				out = append(out, converterProjeto(p))
+			}
+			if resp == nil || resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
 		}
-		for _, p := range ps {
-			out = append(out, converterProjeto(p))
-		}
-		if resp == nil || resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
-	}
-
-	g.mu.Lock()
-	g.projetos[grupo] = out
-	g.mu.Unlock()
-	return out, nil
+		return out, nil
+	})
 }
 
 func (g *clienteAPI) Commits(projeto, ramo string, todos bool) ([]Commit, error) {
 	chave := fmt.Sprintf("%s|%s|%t", projeto, ramo, todos)
-	g.mu.Lock()
-	if c, ok := g.commits[chave]; ok {
-		g.mu.Unlock()
-		return c, nil
-	}
-	g.mu.Unlock()
+	return g.commits.obter(chave, func() ([]Commit, error) {
+		opt := &api.ListCommitsOptions{
+			ListOptions: api.ListOptions{PerPage: porPagina, Page: 1},
+		}
+		if ramo != "" {
+			opt.RefName = api.Ptr(ramo)
+		}
+		if todos {
+			opt.All = api.Ptr(true)
+		}
 
-	opt := &api.ListCommitsOptions{
-		ListOptions: api.ListOptions{PerPage: porPagina, Page: 1},
-	}
-	if ramo != "" {
-		opt.RefName = api.Ptr(ramo)
-	}
-	if todos {
-		opt.All = api.Ptr(true)
-	}
-
-	var out []Commit
-	for pagina := 0; pagina < paginaMaxima; pagina++ {
-		cs, resp, err := g.c.Commits.ListCommits(projeto, opt)
-		if err != nil {
-			if resp != nil && resp.StatusCode == http.StatusNotFound {
-				// Repositório vazio devolve 404 no lugar de lista vazia.
-				return nil, nil
+		var out []Commit
+		for pagina := 0; pagina < paginaMaxima; pagina++ {
+			cs, resp, err := g.c.Commits.ListCommits(projeto, opt)
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					// Repositório vazio devolve 404 no lugar de lista vazia.
+					return nil, nil
+				}
+				return nil, traduzirErro(err, "listando os commits de "+projeto)
 			}
-			return nil, traduzirErro(err, "listando os commits de "+projeto)
-		}
-		for _, c := range cs {
-			out = append(out, converterCommit(c))
-		}
-		if resp == nil || resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
-	}
-
-	g.mu.Lock()
-	g.commits[chave] = out
-	g.mu.Unlock()
-	return out, nil
-}
-
-func (g *clienteAPI) Forks(modelo string) ([]Projeto, error) {
-	g.mu.Lock()
-	if f, ok := g.forks[modelo]; ok {
-		g.mu.Unlock()
-		return f, nil
-	}
-	g.mu.Unlock()
-
-	var out []Projeto
-	opt := &api.ListProjectsOptions{ListOptions: api.ListOptions{PerPage: porPagina, Page: 1}}
-	for {
-		ps, resp, err := g.c.Projects.ListProjectForks(modelo, opt)
-		if err != nil {
-			if resp != nil && resp.StatusCode == http.StatusNotFound {
-				return nil, nil
+			for _, c := range cs {
+				out = append(out, converterCommit(c))
 			}
-			return nil, traduzirErro(err, "listando os forks de "+modelo)
+			if resp == nil || resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
 		}
-		for _, p := range ps {
-			out = append(out, converterProjeto(p))
-		}
-		if resp == nil || resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
-	}
-
-	g.mu.Lock()
-	g.forks[modelo] = out
-	g.mu.Unlock()
-	return out, nil
+		return out, nil
+	})
 }
 
 func (g *clienteAPI) Membros(projeto string) ([]Membro, error) {
-	g.mu.Lock()
-	if m, ok := g.membros[projeto]; ok {
-		g.mu.Unlock()
-		return m, nil
-	}
-	g.mu.Unlock()
-
-	var out []Membro
-	opt := &api.ListProjectMembersOptions{ListOptions: api.ListOptions{PerPage: porPagina, Page: 1}}
-	for {
-		// A listagem "all" inclui quem herdou acesso do grupo, que é onde o
-		// dono do fork aparece.
-		ms, resp, err := g.c.ProjectMembers.ListAllProjectMembers(projeto, opt)
-		if err != nil {
-			if resp != nil && resp.StatusCode == http.StatusNotFound {
-				return nil, nil
+	return g.membros.obter(projeto, func() ([]Membro, error) {
+		var out []Membro
+		opt := &api.ListProjectMembersOptions{ListOptions: api.ListOptions{PerPage: porPagina, Page: 1}}
+		for {
+			// A listagem "all" inclui quem herdou acesso do grupo, que é onde
+			// o dono do fork aparece.
+			ms, resp, err := g.c.ProjectMembers.ListAllProjectMembers(projeto, opt)
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					return nil, nil
+				}
+				return nil, traduzirErro(err, "listando os membros de "+projeto)
 			}
-			return nil, traduzirErro(err, "listando os membros de "+projeto)
+			for _, m := range ms {
+				out = append(out, Membro{
+					Usuario:     m.Username,
+					Nome:        m.Name,
+					NivelAcesso: int(m.AccessLevel),
+				})
+			}
+			if resp == nil || resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
 		}
-		for _, m := range ms {
-			out = append(out, Membro{
-				Usuario:     m.Username,
-				Nome:        m.Name,
-				NivelAcesso: int(m.AccessLevel),
-			})
-		}
-		if resp == nil || resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
-	}
-
-	g.mu.Lock()
-	g.membros[projeto] = out
-	g.mu.Unlock()
-	return out, nil
+		return out, nil
+	})
 }
 
 func converterGrupo(g *api.Group) Grupo {

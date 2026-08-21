@@ -125,7 +125,9 @@ func relatarContas(t *turma.Turma, alunos []turma.Aluno) {
 // para não encher a tela numa turma de trinta alunos.
 func progressoTerminal() acoes.AvisoProgresso {
 	return func(p acoes.Progresso) {
-		fmt.Printf("\r%d/%d  %-40s", p.Feito, p.Total, primeiroNome(p.Rotulo))
+		// O rótulo já vem com a fase; cortar no primeiro espaço esconderia
+		// justamente a informação que evita o comando parecer travado.
+		fmt.Printf("\r%-58s", fmt.Sprintf("%d/%d  %s", p.Feito, p.Total, p.Rotulo))
 	}
 }
 

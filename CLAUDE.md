@@ -106,6 +106,30 @@ situação da conta) e preserva essas colunas ao reimportar.
 Aluno que sai da turma vira `cancelado` e continua no arquivo com as entregas
 já registradas, mesma regra do `diario`.
 
+## Custo das consultas
+
+Duas armadilhas já cobraram caro, e o código carrega defesa contra as duas:
+
+- **listagem completa de grupos.** Quem dá aula há alguns semestres acumula
+  centenas de grupos (mais de quinhentos em 2026/2), e `GET /groups` com
+  `min_access_level` leva cerca de quatro segundos por página. A coleta usa
+  `GruposComAcesso` com o prefixo da turma, que traz os grupos dela em uma
+  requisição, e cai para a checagem dirigida de associação (`MembroDoGrupo`)
+  no que ficou de fora;
+- **busca por texto.** Tem limite próprio no gitlab.com e degrada rápido
+  quando se faz uma por aluno. Só sobrou uma busca por aluno ainda não
+  resolvido, para achar o grupo com nome fora do padrão.
+
+Todo cache do cliente faz busca única por chave: sem isso, os oito
+trabalhadores partem juntos e cada um busca a mesma listagem.
+
+Ordem em que a situação da conta é apurada, que também é ordem de custo:
+listagem da turma, consulta direta ao grupo, associação dirigida, busca pelo
+GRR e, por último, existência da conta. A busca vem antes da conta de
+propósito: o aluno que não conseguiu criar a conta com o GRR ainda pode ter um
+grupo com o GRR no nome, e perguntar primeiro pela conta esconderia a entrega
+dele.
+
 ## Acesso ao GitLab
 
 Duas vias, com papéis distintos:
@@ -185,13 +209,17 @@ deixa de valer e o próximo `sync` confere de novo.
 As tarefas podem ser feitas em dupla, e aí existe um fork só, no grupo de um
 dos dois, com o colega adicionado como membro do projeto (nunca do grupo). A
 coleta tem uma fase própria para isso, entre resolver os grupos e classificar
-as entregas: lista os forks do repositório-modelo, lê os membros de cada um e
-casa com o cadastro.
+as entregas: percorre os forks que os alunos têm nos próprios grupos, lê os
+membros de cada um e casa com o cadastro.
 
 Regras que o código precisa manter:
 
 - fork próprio vence participação no fork alheio. Quem bifurcou é avaliado
   pelo que está no grupo dele;
+- a varredura é pelos grupos da turma, nunca pelos forks do repositório
+  modelo. O modelo acumula os forks de todos os semestres (mais de quatrocentos
+  em 2026/2) e listá-los custava quarenta e cinco segundos para descartar quase
+  tudo;
 - falha na descoberta não interrompe a coleta. Sem ela, cada aluno é avaliado
   pelo próprio grupo, que era o comportamento anterior à fase 5;
 - membro que não está no cadastro da turma é ignorado, o que já descarta o

@@ -51,12 +51,23 @@ func cmdToken() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			grupos, err := cli.GruposDoProfessor()
+			login, err := cli.Eu()
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Conexão com %s em ordem: %d grupo(s) com acesso de reporter ou mais.\n",
-				cfg, len(grupos))
+			fmt.Printf("Conexão com %s em ordem, autenticado como %s.\n", cfg, login)
+
+			// Dentro de uma turma, vale conferir também o que a coleta usa: a
+			// listagem dos grupos dela em que você é reporter.
+			if _, t, err := abrir(); err == nil {
+				if prefixo := t.Config.PrefixoGrupo(); prefixo != "" {
+					grupos, err := cli.GruposComAcesso(prefixo)
+					if err != nil {
+						return err
+					}
+					fmt.Printf("Grupos de %s com o seu acesso: %d.\n", prefixo, len(grupos))
+				}
+			}
 			return nil
 		},
 	}

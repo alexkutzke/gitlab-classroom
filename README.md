@@ -278,9 +278,9 @@ o colega como membro do projeto. Procurar apenas no grupo de cada aluno
 marcaria o colega como quem não entregou, o que é falso e chega até ele pelo
 relatório publicado.
 
-A coleta resolve isso sozinha: lista os forks do repositório-modelo, lê os
-membros de cada um e, para o aluno sem fork no próprio grupo, procura um fork
-onde ele foi adicionado. O resultado fica em `equipes.csv`.
+A coleta resolve isso sozinha: percorre os forks que os alunos têm nos próprios
+grupos, lê os membros de cada um e, para o aluno sem fork, procura um fork onde
+ele foi adicionado. O resultado fica em `equipes.csv`.
 
 ```bash
 classroom equipes

@@ -17,10 +17,12 @@ type clienteFalso struct {
 	grupos   map[string]gl.Grupo // por caminho
 	meus     []gl.Grupo          // grupos com o professor associado
 	projetos map[string][]gl.Projeto
-	commits  map[string][]gl.Commit  // por caminho completo do projeto
-	forks    map[string][]gl.Projeto // forks por caminho do repositório-modelo
-	membros  map[string][]gl.Membro  // membros por caminho completo do fork
+	commits  map[string][]gl.Commit // por caminho completo do projeto
+	membros  map[string][]gl.Membro // membros por caminho completo do fork
 	erro     error
+	// erroMembros imita a consulta de membros indisponível, que é a falha que
+	// desliga a descoberta de entregas em dupla.
+	erroMembros error
 }
 
 func (c *clienteFalso) UsuarioExiste(login string) (bool, error) {
@@ -37,15 +39,34 @@ func (c *clienteFalso) Grupo(caminho string) (*gl.Grupo, error) {
 	if !ok {
 		return nil, nil
 	}
-	for _, m := range c.meus {
-		if m.Caminho == g.Caminho {
-			g.Membro = true
-		}
-	}
 	return &g, nil
 }
 
-func (c *clienteFalso) GruposDoProfessor() ([]gl.Grupo, error) { return c.meus, nil }
+func (c *clienteFalso) Eu() (string, error) { return "alexkutzke", nil }
+
+func (c *clienteFalso) MembroDoGrupo(caminho string) (bool, error) {
+	for _, g := range c.meus {
+		if strings.EqualFold(g.Caminho, caminho) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GruposComAcesso imita o filtro do GitLab: devolve os grupos do professor
+// cujo caminho contém a busca.
+func (c *clienteFalso) GruposComAcesso(busca string) ([]gl.Grupo, error) {
+	if busca == "" {
+		return c.meus, nil
+	}
+	var out []gl.Grupo
+	for _, g := range c.meus {
+		if strings.Contains(strings.ToLower(g.Caminho), strings.ToLower(busca)) {
+			out = append(out, g)
+		}
+	}
+	return out, nil
+}
 
 func (c *clienteFalso) ProjetosDoGrupo(grupo string) ([]gl.Projeto, error) {
 	if c.erro != nil {
@@ -58,9 +79,12 @@ func (c *clienteFalso) Commits(projeto, ramo string, todos bool) ([]gl.Commit, e
 	return c.commits[projeto], nil
 }
 
-func (c *clienteFalso) Forks(modelo string) ([]gl.Projeto, error) { return c.forks[modelo], nil }
-
-func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) { return c.membros[projeto], nil }
+func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) {
+	if c.erroMembros != nil {
+		return nil, c.erroMembros
+	}
+	return c.membros[projeto], nil
+}
 
 const grupoAna = "ds122-2026-2-n-grr20259001"
 
@@ -432,9 +456,6 @@ func duplaFalsa() *clienteFalso {
 	c.commits[fork.Completo] = []gl.Commit{
 		{SHA: "aluno1", Data: time.Date(2026, 9, 1, 10, 0, 0, 0, time.Local)},
 	}
-	c.forks = map[string][]gl.Projeto{
-		"ds122-alexkutzke/ds122-html-assignment": {fork},
-	}
 	c.membros = map[string][]gl.Membro{
 		fork.Completo: {
 			{Usuario: "grr20259001", NivelAcesso: 50},
@@ -563,7 +584,7 @@ func TestMembroForaDoCadastroEhIgnorado(t *testing.T) {
 
 func TestFalhaNaDescobertaDeEquipesNaoDerrubaAColeta(t *testing.T) {
 	c := duplaFalsa()
-	c.forks = nil // a API não devolveu os forks
+	c.erroMembros = errors.New("indisponível") // a consulta de membros falhou
 
 	res := coletarDupla(t, c)
 

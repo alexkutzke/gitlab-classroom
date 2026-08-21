@@ -369,6 +369,25 @@ func (c Config) CaminhoGrupo(grr string) string {
 	return r.Replace(c.PadraoGrupo)
 }
 
+// PrefixoGrupo é a parte fixa do nome dos grupos da turma, antes do GRR.
+//
+// Serve para pedir ao GitLab só os grupos desta turma, em vez da listagem
+// inteira de quem dá aula há vários semestres.
+func (c Config) PrefixoGrupo() string {
+	antes, _, ok := strings.Cut(c.PadraoGrupo, "{grr}")
+	if !ok {
+		antes = c.PadraoGrupo
+	}
+	r := strings.NewReplacer(
+		"{codigo}", strings.ToLower(c.Codigo),
+		"{ano}", c.Ano(),
+		"{periodo}", c.Periodo(),
+		"{semestre}", c.Periodo(),
+		"{turno}", strings.ToLower(c.Turno),
+	)
+	return strings.Trim(r.Replace(antes), "-/_")
+}
+
 // CaminhoModelo devolve o caminho completo do repositório-modelo.
 func (c Config) CaminhoModelo(repo string) string {
 	if c.NamespaceModelos == "" {

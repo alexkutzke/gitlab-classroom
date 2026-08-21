@@ -156,8 +156,8 @@ func Sincronizar(ctx context.Context, t *turma.Turma, pastaTurma string, cli gl.
 	col := &coleta.Coletor{
 		Cliente: cli,
 		Config:  t.Config,
-		Progresso: func(feito, total int, a turma.Aluno) {
-			prog.avisar(feito, total, a.Nome)
+		Progresso: func(feito, total int, rotulo string) {
+			prog.avisar(feito, total, rotulo)
 		},
 	}
 	atualizados, err := col.Reconciliar(ctx, ativos)
@@ -217,8 +217,8 @@ func Coletar(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios []t
 	col := &coleta.Coletor{
 		Cliente: cli,
 		Config:  t.Config,
-		Progresso: func(feito, total int, a turma.Aluno) {
-			prog.avisar(feito, total, a.Nome)
+		Progresso: func(feito, total int, rotulo string) {
+			prog.avisar(feito, total, rotulo)
 		},
 	}
 	saida, err := col.Coletar(ctx, alunos, exercicios)

@@ -18,9 +18,10 @@ import (
 type Coletor struct {
 	Cliente gl.Cliente
 	Config  turma.Config
-	// Progresso é chamado a cada aluno concluído, de qualquer goroutine.
-	// Pode ser nil.
-	Progresso func(feito, total int, aluno turma.Aluno)
+	// Progresso é chamado a cada item concluído, de qualquer goroutine. O
+	// rótulo diz em que fase a coleta está, porque as três levam tempo e o
+	// silêncio de uma delas parece travamento.
+	Progresso func(feito, total int, rotulo string)
 }
 
 // Resultado é o que a coleta apurou.
@@ -37,7 +38,7 @@ type Resultado struct {
 // Reconciliar resolve o grupo e a situação da conta de cada aluno, sem olhar
 // exercício nenhum. É o que o comando sync usa.
 func (c *Coletor) Reconciliar(ctx context.Context, alunos []turma.Aluno) ([]turma.Aluno, error) {
-	out := c.resolverGrupos(ctx, alunos, c.Progresso)
+	out := c.resolverGrupos(ctx, alunos, "")
 	return out, ctx.Err()
 }
 
@@ -48,11 +49,14 @@ func (c *Coletor) Reconciliar(ctx context.Context, alunos []turma.Aluno) ([]turm
 // existe porque a entrega em dupla mora no grupo de um só dos integrantes, e
 // só a lista de membros do fork revela o outro.
 func (c *Coletor) Coletar(ctx context.Context, alunos []turma.Aluno, exercicios []turma.Exercicio) (Resultado, error) {
-	atualizados := c.resolverGrupos(ctx, alunos, nil)
+	atualizados := c.resolverGrupos(ctx, alunos, "grupos")
 	if err := ctx.Err(); err != nil {
 		return Resultado{}, err
 	}
-	equipes := c.descobrirEquipes(atualizados, exercicios)
+	equipes := c.descobrirEquipes(ctx, atualizados, exercicios)
+	if err := ctx.Err(); err != nil {
+		return Resultado{}, err
+	}
 
 	entregas, vinculos := c.coletarTodos(ctx, atualizados, exercicios, equipes)
 	if err := ctx.Err(); err != nil {
@@ -67,7 +71,7 @@ func (c *Coletor) Coletar(ctx context.Context, alunos []turma.Aluno, exercicios 
 
 // resolverGrupos descobre o grupo e a situação da conta de cada aluno, em
 // paralelo.
-func (c *Coletor) resolverGrupos(ctx context.Context, alunos []turma.Aluno, progresso func(int, int, turma.Aluno)) []turma.Aluno {
+func (c *Coletor) resolverGrupos(ctx context.Context, alunos []turma.Aluno, fase string) []turma.Aluno {
 	out := make([]turma.Aluno, len(alunos))
 	copy(out, alunos)
 
@@ -77,11 +81,22 @@ func (c *Coletor) resolverGrupos(ctx context.Context, alunos []turma.Aluno, prog
 		a.Grupo, a.SituacaoConta, a.VerificadoEm = grupo, sit, time.Now()
 		out[i] = a
 	}, func(feito, total, i int) {
-		if progresso != nil {
-			progresso(feito, total, out[i])
-		}
+		c.avisar(feito, total, fase, out[i].Nome)
 	})
 	return out
+}
+
+// avisar monta o rótulo do progresso, com a fase na frente quando há mais de
+// uma.
+func (c *Coletor) avisar(feito, total int, fase, item string) {
+	if c.Progresso == nil {
+		return
+	}
+	rotulo := item
+	if fase != "" {
+		rotulo = fase + ": " + item
+	}
+	c.Progresso(feito, total, rotulo)
 }
 
 // resolverGrupo procura o grupo do aluno e classifica o que foi encontrado.
@@ -104,12 +119,29 @@ func (c *Coletor) resolverGrupo(a turma.Aluno) (string, turma.SituacaoConta) {
 		}
 	}
 
+	// A listagem dos grupos da turma responde de uma vez, para todos os
+	// alunos, a pergunta cara: em quais deles o professor é reporter.
+	meus := c.gruposDaTurma()
+	for _, cand := range candidatos {
+		if g, ok := meus[strings.ToLower(cand)]; ok {
+			if !contem(esperados, g.Caminho) {
+				return g.Caminho, turma.ContaGrupoDivergente
+			}
+			return g.Caminho, turma.ContaOK
+		}
+	}
+
+	// Fora da listagem da turma: o grupo pode ter nome que não casa com o
+	// prefixo, ou existir sem a associação do professor. A consulta direta,
+	// mais a checagem dirigida de associação, separa os dois casos sem gastar
+	// busca por texto.
 	for _, cand := range candidatos {
 		g, err := c.Cliente.Grupo(cand)
 		if err != nil || g == nil {
 			continue
 		}
-		if !g.Membro {
+		membro, err := c.Cliente.MembroDoGrupo(g.Caminho)
+		if err != nil || !membro {
 			return g.Caminho, turma.ContaSemAcesso
 		}
 		if !contem(esperados, g.Caminho) {
@@ -118,14 +150,14 @@ func (c *Coletor) resolverGrupo(a turma.Aluno) (string, turma.SituacaoConta) {
 		return g.Caminho, turma.ContaOK
 	}
 
-	// Grupo com nome fora do padrão: procura entre os grupos em que o
-	// professor foi associado, tanto pelo GRR quanto pelo usuário cadastrado.
-	if grupos, err := c.Cliente.GruposDoProfessor(); err == nil {
-		chaves := []string{turma.UsuarioGitLab(a.GRR), turma.UsuarioGitLab(a.UsuarioEsperado())}
-		for _, g := range grupos {
-			caminho := strings.ToLower(g.Caminho)
-			for _, k := range chaves {
-				if k != "" && strings.Contains(caminho, k) {
+	// Sobrou o grupo com nome fora do padrão. A busca por texto vem antes da
+	// checagem da conta porque o aluno que não conseguiu criar a conta com o
+	// GRR ainda pode ter um grupo com o GRR no nome: perguntar primeiro pela
+	// conta o marcaria como sem conta e esconderia a entrega dele.
+	if login := turma.UsuarioGitLab(a.GRR); login != "" {
+		if grupos, err := c.Cliente.GruposComAcesso(login); err == nil {
+			for _, g := range grupos {
+				if strings.Contains(strings.ToLower(g.Caminho), login) {
 					return g.Caminho, turma.ContaGrupoDivergente
 				}
 			}
@@ -136,6 +168,20 @@ func (c *Coletor) resolverGrupo(a turma.Aluno) (string, turma.SituacaoConta) {
 		return "", turma.ContaSemUsuario
 	}
 	return "", turma.ContaGrupoInvisivel
+}
+
+// gruposDaTurma devolve, por caminho em minúsculas, os grupos da turma em que
+// o professor tem acesso de reporter ou mais.
+func (c *Coletor) gruposDaTurma() map[string]gl.Grupo {
+	grupos, err := c.Cliente.GruposComAcesso(c.Config.PrefixoGrupo())
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]gl.Grupo, len(grupos))
+	for _, g := range grupos {
+		out[strings.ToLower(g.Caminho)] = g
+	}
+	return out
 }
 
 // esperados devolve os nomes de grupo aceitos como dentro do padrão para o
@@ -169,52 +215,80 @@ func (e equipes) convite(exercicio, grr string) (convite, bool) {
 	return c, ok
 }
 
-// descobrirEquipes lista os forks de cada repositório-modelo e, para cada um,
-// quem são os membros.
+// descobrirEquipes procura, nos forks que os alunos têm em seus grupos, quem
+// mais foi adicionado como membro.
 //
 // Nas tarefas em dupla, só um dos dois faz o fork, no grupo dele, e adiciona o
 // colega como membro do projeto. Procurar apenas no grupo de cada aluno
 // deixaria o colega marcado como quem não entregou, que é falso e chega ao
 // aluno pelo relatório publicado.
 //
+// A varredura é pelos grupos da turma, e não pelos forks do repositório
+// modelo: o modelo acumula os forks de todos os semestres, e listá-los custa
+// dezenas de segundos para depois descartar quase tudo. Os projetos de cada
+// grupo já são consultados na fase seguinte, então aqui eles saem do cache.
+//
 // Falha aqui não interrompe a coleta: sem a descoberta, cada aluno é avaliado
 // pelo próprio grupo, que era o comportamento anterior.
-func (c *Coletor) descobrirEquipes(alunos []turma.Aluno, exercicios []turma.Exercicio) equipes {
+func (c *Coletor) descobrirEquipes(ctx context.Context, alunos []turma.Aluno, exercicios []turma.Exercicio) equipes {
 	if len(exercicios) == 0 {
 		return nil
 	}
 	porUsuario := map[string]turma.Aluno{}
-	porGrupo := map[string]turma.Aluno{}
 	for _, a := range alunos {
 		porUsuario[turma.UsuarioGitLab(a.UsuarioEsperado())] = a
 		porUsuario[turma.UsuarioGitLab(a.GRR)] = a
+	}
+
+	comGrupo := make([]turma.Aluno, 0, len(alunos))
+	for _, a := range alunos {
 		if a.Grupo != "" {
-			porGrupo[strings.ToLower(a.Grupo)] = a
+			comGrupo = append(comGrupo, a)
 		}
+	}
+	if len(comGrupo) == 0 {
+		return nil
 	}
 
 	out := equipes{}
 	for _, e := range exercicios {
-		forks, err := c.Cliente.Forks(c.Config.CaminhoModelo(e.Repo))
-		if err != nil || len(forks) == 0 {
-			continue
+		type achado struct {
+			fork    gl.Projeto
+			dono    turma.Aluno
+			membros []gl.Membro
 		}
-		doExercicio := map[string]convite{}
-		for _, f := range forks {
-			dono, ok := donoDoFork(f, porGrupo, porUsuario)
-			if !ok {
-				continue
-			}
-			membros, err := c.Cliente.Membros(f.Completo)
+		achados := make([]achado, len(comGrupo))
+
+		c.emParalelo(ctx, len(comGrupo), func(i int) {
+			a := comGrupo[i]
+			projetos, err := c.Cliente.ProjetosDoGrupo(a.Grupo)
 			if err != nil {
+				return
+			}
+			p, ok := acharProjeto(projetos, e, c.Config)
+			if !ok {
+				return
+			}
+			membros, err := c.Cliente.Membros(p.Completo)
+			if err != nil {
+				return
+			}
+			achados[i] = achado{fork: p, dono: a, membros: membros}
+		}, func(feito, total, i int) {
+			c.avisar(feito, total, "duplas em "+e.ID, comGrupo[i].Nome)
+		})
+
+		doExercicio := map[string]convite{}
+		for _, ac := range achados {
+			if ac.dono.GRR == "" {
 				continue
 			}
-			for _, m := range membros {
-				a, ok := porUsuario[turma.UsuarioGitLab(m.Usuario)]
-				if !ok || a.GRR == dono.GRR {
+			for _, m := range ac.membros {
+				colega, ok := porUsuario[turma.UsuarioGitLab(m.Usuario)]
+				if !ok || colega.GRR == ac.dono.GRR {
 					continue
 				}
-				doExercicio[a.GRR] = convite{Dono: dono, Projeto: f}
+				doExercicio[colega.GRR] = convite{Dono: ac.dono, Projeto: ac.fork}
 			}
 		}
 		if len(doExercicio) > 0 {
@@ -222,26 +296,6 @@ func (c *Coletor) descobrirEquipes(alunos []turma.Aluno, exercicios []turma.Exer
 		}
 	}
 	return out
-}
-
-// donoDoFork identifica de quem é o grupo onde o fork está.
-func donoDoFork(f gl.Projeto, porGrupo, porUsuario map[string]turma.Aluno) (turma.Aluno, bool) {
-	espaco, _, ok := strings.Cut(f.Completo, "/")
-	if !ok {
-		return turma.Aluno{}, false
-	}
-	espaco = strings.ToLower(espaco)
-	if a, ok := porGrupo[espaco]; ok {
-		return a, true
-	}
-	// Grupo ainda não resolvido para nenhum aluno: o nome do padrão termina
-	// com o GRR, então procurar o login dentro do caminho resolve.
-	for login, a := range porUsuario {
-		if login != "" && strings.Contains(espaco, login) {
-			return a, true
-		}
-	}
-	return turma.Aluno{}, false
 }
 
 // --- fase 3: entregas ---
@@ -253,9 +307,7 @@ func (c *Coletor) coletarTodos(ctx context.Context, alunos []turma.Aluno, exerci
 	c.emParalelo(ctx, len(alunos), func(i int) {
 		porAluno[i], vinculosPorAluno[i] = c.coletarAluno(alunos[i], exercicios, eq)
 	}, func(feito, total, i int) {
-		if c.Progresso != nil {
-			c.Progresso(feito, total, alunos[i])
-		}
+		c.avisar(feito, total, "entregas", alunos[i].Nome)
 	})
 
 	var entregas []turma.Entrega
