@@ -8,8 +8,10 @@
 package acoes
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/alexkutzke/gitlab-classroom/internal/coleta"
 	"github.com/alexkutzke/gitlab-classroom/internal/correcao"
 	"github.com/alexkutzke/gitlab-classroom/internal/diario"
+	"github.com/alexkutzke/gitlab-classroom/internal/export"
 	gl "github.com/alexkutzke/gitlab-classroom/internal/gitlab"
 	"github.com/alexkutzke/gitlab-classroom/internal/repo"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
@@ -515,4 +518,41 @@ func ApagarNota(t *turma.Turma, exercicio, grr string, soEste bool) int {
 		}
 	}
 	return apagadas
+}
+
+// --- exportações ---
+
+// Exportar grava o relatório de entregas em markdown e a planilha de notas na
+// pasta da turma, com os nomes padrão. Devolve os dois caminhos.
+//
+// O relatório sai identificado por GRR, que é a versão publicável no material
+// da disciplina.
+func Exportar(t *turma.Turma, pastaTurma string) (markdown, planilha string, err error) {
+	markdown = filepath.Join(pastaTurma, nomeBase(t.Config)+"_entregas.md")
+	var buf bytes.Buffer
+	if err := export.Markdown(&buf, t, export.Opcoes{Identificacao: export.PorGRR}); err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(markdown, buf.Bytes(), 0o644); err != nil {
+		return "", "", err
+	}
+
+	planilha = filepath.Join(pastaTurma, nomeBase(t.Config)+"_notas_exercicios.xlsx")
+	if err := export.NotasXLSX(planilha, t, OpcoesNotas(t)); err != nil {
+		return "", "", err
+	}
+	return markdown, planilha, nil
+}
+
+// OpcoesNotas monta as opções padrão da planilha de notas.
+func OpcoesNotas(t *turma.Turma) export.OpcoesNotas {
+	return export.OpcoesNotas{Hoje: turma.Hoje()}
+}
+
+func nomeBase(c turma.Config) string {
+	partes := []string{c.Codigo}
+	if c.Turma != "" {
+		partes = append(partes, c.Turma)
+	}
+	return strings.Join(partes, "_")
 }

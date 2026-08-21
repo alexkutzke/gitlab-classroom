@@ -138,6 +138,7 @@ resolve.
 
 | Comando | Papel |
 |---|---|
+| `classroom` | sem subcomando, abre a interface interativa |
 | `classroom init` | cria o `.classroom/`, importa o cadastro e a configuração do `.diario/` |
 | `classroom sync` | reimporta o cadastro e reconcilia com o GitLab (grupo, associação, usuário) |
 | `classroom token` | diz de onde vem o token e testa a conexão, sem exibir o valor |
@@ -203,6 +204,34 @@ Regras que o código precisa manter:
 A nota continua sendo por aluno, porque é ela que entra na média, mas lançar a
 de um integrante lança a dos demais por padrão, na interface e no comando
 avulso. `D` e `--so-este` desligam isso.
+
+## Interface interativa
+
+`internal/tui`, em Bubble Tea. Três regras estruturais:
+
+- **a TUI não tem lógica de domínio.** Toda operação passa por
+  `internal/acoes`, o mesmo pacote que os subcomandos usam. Se uma regra
+  precisar mudar, muda lá e os dois caminhos acompanham;
+- **o que demora roda em goroutine** e conversa com o laço de eventos por um
+  canal. O progresso é descartável (um `select` com `default`), porque perder
+  um quadro é melhor que travar o trabalho. Enquanto a operação roda, só
+  cancelar e sair valem;
+- **cancelar não grava.** As três operações longas recebem `context.Context`;
+  na interrupção, `acoes` devolve erro e nada é aplicado, senão a coleta pela
+  metade apagaria a entrega de quem não foi visitado.
+
+Telas: painel (pendências e resumo por exercício), exercício (a turma linha a
+linha, de onde partem coleta, clone, verificação e correção), exercícios
+(cadastro e edição), alunos, equipes, tarefas (registro das operações da
+sessão) e ajuda.
+
+A correção é a mesma `internal/correcao` do subcomando, embutida: o modelo
+ganhou `Sessao`, e o campo `autonomo` decide se sair encerra o programa ou
+devolve o controle à aplicação.
+
+Os testes dirigem o modelo por mensagens de tecla e inspecionam a saída de
+`View`, sem terminal e sem rede; as operações longas são exercitadas com um
+cliente de GitLab dublado e um laço de eventos escrito à mão no teste.
 
 ## Classificação da entrega
 
@@ -293,7 +322,7 @@ e a interface avisa isso em vez de perder o que foi digitado.
 
 ## Fases de implementação
 
-As cinco estão feitas.
+As seis estão feitas.
 
 1. `store`, modelo, `init`, `sync`, `exercicios`, `token`, `coletar` por API,
    `status`, `alunos` e `relatorio` em markdown. Substituiu os scripts de `old/`.
@@ -304,6 +333,8 @@ As cinco estão feitas.
 4. `verificar`: suíte automatizada em contêiner sem rede.
 5. `equipes`: entregas em dupla descobertas pelos membros do fork, com
    cadastro manual, clone único e nota propagada.
+6. `internal/tui`: interface interativa, com `internal/acoes` extraído para
+   ser o caminho único das operações.
 
 Cada fase entra com teste. Seguir o padrão do `diario`: testes de tabela sobre
 os pacotes de domínio e de leitura de arquivo, com fixtures anonimizadas em

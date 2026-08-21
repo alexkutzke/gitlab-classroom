@@ -51,11 +51,16 @@ type telaEntregas struct {
 	filtro     string
 	modoFiltro bool
 	buffer     string
+
+	// vinculando guarda o aluno que está esperando o dono do fork ser
+	// escolhido, no cadastro de entrega em dupla.
+	vinculando *turma.Aluno
 }
 
 func (te *telaEntregas) reiniciar() {
 	te.cursor, te.topo = 0, 0
 	te.filtro, te.buffer, te.modoFiltro = "", "", false
+	te.vinculando = nil
 }
 
 // linhas monta a lista já filtrada e ordenada.
@@ -150,6 +155,55 @@ func (te *telaEntregas) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 		te.ordem = (te.ordem + 1) % 3
 		te.cursor = 0
 		a.avisar("ordenado por %s", te.ordem)
+	case "enter":
+		// No modo vínculo, o enter escolhe o dono do fork.
+		if te.vinculando != nil {
+			l, ok := linhaAtual(linhas, te.cursor)
+			if ok {
+				a.vincular(*te.vinculando, l.Aluno)
+			}
+			te.vinculando = nil
+			return nil, true
+		}
+		return nil, false
+	case "n":
+		e, ok := a.exercicioAberto()
+		if !ok {
+			return nil, true
+		}
+		return a.abrirCorrecao(e, acoes.FiltroCorrecao{}), true
+	case "N":
+		e, ok := a.exercicioAberto()
+		if !ok {
+			return nil, true
+		}
+		return a.abrirCorrecao(e, acoes.FiltroCorrecao{SemNota: true}), true
+	case "V":
+		l, ok := linhaAtual(linhas, te.cursor)
+		if !ok {
+			return nil, true
+		}
+		te.vinculando = &l.Aluno
+		a.avisar("escolha com enter o dono do fork onde %s entregou; esc cancela",
+			l.Aluno.Nome)
+	case "X":
+		l, ok := linhaAtual(linhas, te.cursor)
+		if !ok {
+			return nil, true
+		}
+		v, ok := a.turma.VinculosDoExercicio(a.exercicio)[l.Aluno.GRR]
+		if !ok {
+			a.erro = l.Aluno.Nome + " não entrega no fork de ninguém"
+			return nil, true
+		}
+		a.desvincular(a.exercicio, v, l.Aluno.Nome)
+	case "esc":
+		if te.vinculando != nil {
+			te.vinculando = nil
+			a.avisar("vínculo cancelado")
+			return nil, true
+		}
+		return nil, false
 	case "c":
 		e, ok := a.exercicioAberto()
 		if !ok {
@@ -259,7 +313,10 @@ func linhaAtual(linhas []linhaEntrega, cursor int) (linhaEntrega, bool) {
 }
 
 func (te *telaEntregas) atalhos() string {
-	return "c coleta · l clona · v verifica · o editor · w GitLab · s ordem · / filtra"
+	if te.vinculando != nil {
+		return estAtencao.Render("escolha o dono do fork com enter · esc cancela")
+	}
+	return "n corrige · c coleta · l clona · v verifica · o editor · w GitLab · V vincula · s ordem · / filtra"
 }
 
 func (te *telaEntregas) desenhar(a *App) string {

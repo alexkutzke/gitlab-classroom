@@ -182,13 +182,20 @@ func (tq *telaEquipes) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 		tq.cursor = 0
 	case "end", "G":
 		tq.cursor = max(0, total-1)
+	case "d":
+		lista := tq.lista(a)
+		if tq.cursor < 0 || tq.cursor >= len(lista) {
+			return nil, true
+		}
+		v := lista[tq.cursor]
+		a.desvincular(v.Vinculo.Exercicio, v.Vinculo, v.Integrante)
 	default:
 		return nil, false
 	}
 	return nil, true
 }
 
-func (tq *telaEquipes) atalhos() string { return "entregas feitas por mais de um aluno" }
+func (tq *telaEquipes) atalhos() string { return "d desfaz o vínculo" }
 
 func (tq *telaEquipes) desenhar(a *App) string {
 	var b strings.Builder
@@ -314,6 +321,8 @@ func (aj *ajuda) desenhar(a *App) string {
 			{"?", "esta ajuda"},
 		}},
 		{"Exercício", [][2]string{
+			{"n N", "corrige, e só quem ainda não tem nota"},
+			{"V X", "vincula e desvincula entrega em dupla"},
 			{"o", "abre o clone do aluno no $EDITOR"},
 			{"w", "abre o projeto no GitLab"},
 			{"s", "alterna a ordem: nome, situação, nota"},
@@ -321,6 +330,14 @@ func (aj *ajuda) desenhar(a *App) string {
 		}},
 		{"Alunos", [][2]string{
 			{"P", "mostra só quem tem pendência de cadastro"},
+		}},
+		{"Exercícios (x)", [][2]string{
+			{"n", "cadastra um exercício"},
+			{"T D P V I", "edita título, prazo, peso, suíte e imagem"},
+			{"A z", "arquiva, e mostra os arquivados"},
+		}},
+		{"Painel", [][2]string{
+			{"E", "exporta o relatório e a planilha de notas"},
 		}},
 	}
 

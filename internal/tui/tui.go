@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
+	"github.com/alexkutzke/gitlab-classroom/internal/correcao"
 	gl "github.com/alexkutzke/gitlab-classroom/internal/gitlab"
 	"github.com/alexkutzke/gitlab-classroom/internal/store"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
@@ -27,6 +28,8 @@ const (
 	idEquipes
 	idTarefas
 	idAjuda
+	idCorrecao
+	idExercicios
 )
 
 // AbrirCliente devolve um cliente do GitLab. Fica como função para o token só
@@ -46,8 +49,12 @@ type App struct {
 	panorama  acoes.Panorama
 	exercicio string // exercício aberto na tela de entregas
 
+	correcao  *correcao.Sessao
+	confirmar *confirmacao
+
 	painel    painel
 	entregas  telaEntregas
+	catalogo  telaExercicios
 	alunos    telaAlunos
 	equipes   telaEquipes
 	tarefas   telaTarefas
@@ -165,6 +172,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, tratada := a.tratarTarefa(msg); tratada {
 		return a, cmd
 	}
+	if a.tela == idCorrecao {
+		if cmd, tratada := a.atualizarCorrecao(msg); tratada {
+			return a, cmd
+		}
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -172,6 +184,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		// Uma confirmação pendente captura tudo até ser respondida.
+		if a.confirmar != nil {
+			return a, a.responderConfirmacao(msg)
+		}
 		// Enquanto uma operação de rede roda, só cancelar e sair valem: duas
 		// coletas ao mesmo tempo mexeriam na mesma turma.
 		if a.emCurso() {
@@ -210,6 +226,8 @@ func (a *App) telaAtual(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return a.tarefas.atualizar(a, msg)
 	case idAjuda:
 		return a.ajudaTela.atualizar(a, msg)
+	case idExercicios:
+		return a.catalogo.atualizar(a, msg)
 	}
 	return nil, false
 }
@@ -239,6 +257,8 @@ func (a *App) teclaGlobal(msg tea.KeyMsg) tea.Cmd {
 		a.ir(idEquipes)
 	case "t":
 		a.ir(idTarefas)
+	case "x":
+		a.ir(idExercicios)
 	case "r":
 		a.recarregarDoDisco()
 	case "S":
@@ -284,6 +304,10 @@ func (a *App) nomeDaTela() string {
 		return "tarefas"
 	case idAjuda:
 		return "ajuda"
+	case idCorrecao:
+		return "correção de " + a.exercicio
+	case idExercicios:
+		return "exercícios"
 	}
 	return "painel"
 }
@@ -300,11 +324,23 @@ func (a *App) corpo() string {
 		return a.tarefas.desenhar(a)
 	case idAjuda:
 		return a.ajudaTela.desenhar(a)
+	case idExercicios:
+		return a.catalogo.desenhar(a)
+	case idCorrecao:
+		if a.correcao != nil {
+			return a.correcao.View()
+		}
 	}
 	return a.painel.desenhar(a)
 }
 
 func (a *App) rodape() string {
+	if a.confirmar != nil {
+		return estAtencao.Render(a.confirmar.pergunta + estFraco.Render("   s confirma · n cancela"))
+	}
+	if a.tela == idCorrecao {
+		return "" // a subtela desenha o próprio rodapé
+	}
 	if a.emCurso() {
 		return a.barraDeProgresso()
 	}
@@ -318,7 +354,7 @@ func (a *App) rodape() string {
 }
 
 func (a *App) atalhosDaTela() string {
-	comuns := "p painel · a alunos · e equipes · t tarefas · ? ajuda · q volta"
+	comuns := "p painel · x exercícios · a alunos · e equipes · t tarefas · ? ajuda · q volta"
 	switch a.tela {
 	case idPainel:
 		return "enter abre o exercício · " + comuns
@@ -328,6 +364,8 @@ func (a *App) atalhosDaTela() string {
 		return a.alunos.atalhos() + " · " + comuns
 	case idEquipes:
 		return a.equipes.atalhos() + " · " + comuns
+	case idExercicios:
+		return a.catalogo.atalhos() + " · " + comuns
 	}
 	return comuns
 }

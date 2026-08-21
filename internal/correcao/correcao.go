@@ -100,20 +100,45 @@ type modelo struct {
 	// propagar repete a nota nos demais integrantes da entrega em dupla.
 	propagar bool
 
-	aviso  string
-	salvar bool
+	// autonomo distingue a tela aberta como programa próprio, pelo
+	// subcomando, da mesma tela embutida na interface: no segundo caso sair
+	// devolve o controle à aplicação, em vez de encerrá-la.
+	autonomo bool
+
+	aviso     string
+	salvar    bool
+	encerrada bool
 }
 
-// Executar abre a interface e devolve as notas lançadas.
+// Executar abre a correção como programa próprio, que é como o subcomando a
+// usa.
 func Executar(o Opcoes) (Resultado, error) {
+	s, err := Nova(o)
+	if err != nil {
+		return Resultado{}, err
+	}
+	s.m.autonomo = true
+
+	saida, err := tea.NewProgram(s.m).Run()
+	if err != nil {
+		return Resultado{}, err
+	}
+	return (&Sessao{m: saida.(*modelo)}).Resultado(), nil
+}
+
+// Sessao é a correção embutida em outra aplicação. A interface interativa a
+// usa como subtela, sem abrir um programa Bubble Tea próprio.
+type Sessao struct{ m *modelo }
+
+// Nova prepara a correção.
+func Nova(o Opcoes) (*Sessao, error) {
 	if len(o.Itens) == 0 {
-		return Resultado{}, fmt.Errorf("nenhum aluno a corrigir em %s", o.Exercicio.ID)
+		return nil, fmt.Errorf("nenhum aluno a corrigir em %s", o.Exercicio.ID)
 	}
 	if o.NotaMaxima <= 0 {
 		o.NotaMaxima = 100
 	}
-
-	m := modelo{
+	m := &modelo{
 		exercicio:  o.Exercicio,
 		notaMaxima: o.NotaMaxima,
 		itens:      o.Itens,
@@ -122,31 +147,45 @@ func Executar(o Opcoes) (Resultado, error) {
 		largura:    100,
 	}
 	m.filtrar()
+	return &Sessao{m: m}, nil
+}
 
-	p := tea.NewProgram(&m)
-	saida, err := p.Run()
-	if err != nil {
-		return Resultado{}, err
-	}
-	final := saida.(*modelo)
-	if !final.salvar {
-		return Resultado{}, nil
-	}
+// Atualizar entrega uma mensagem à correção.
+func (s *Sessao) Atualizar(msg tea.Msg) tea.Cmd {
+	_, cmd := s.m.Update(msg)
+	return cmd
+}
 
+// Dimensionar informa o tamanho disponível na tela de quem hospeda.
+func (s *Sessao) Dimensionar(largura, altura int) {
+	s.m.largura, s.m.altura = largura, max(5, altura)
+}
+
+// View desenha a correção.
+func (s *Sessao) View() string { return s.m.View() }
+
+// Encerrada informa se o professor saiu da correção.
+func (s *Sessao) Encerrada() bool { return s.m.encerrada }
+
+// Resultado traz as notas lançadas. Vem vazio quando a saída foi sem gravar.
+func (s *Sessao) Resultado() Resultado {
+	if !s.m.salvar {
+		return Resultado{}
+	}
 	res := Resultado{Salvar: true}
 	agora := time.Now()
-	for _, i := range final.itens {
+	for _, i := range s.m.itens {
 		switch {
 		case i.removido:
 			res.Removidas = append(res.Removidas, i.Aluno.GRR)
 		case i.alterado && i.temNota:
 			res.Notas = append(res.Notas, turma.Nota{
-				Exercicio: final.exercicio.ID, GRR: i.Aluno.GRR,
+				Exercicio: s.m.exercicio.ID, GRR: i.Aluno.GRR,
 				Valor: i.nota, Comentario: i.comentario, CorrigidoEm: agora,
 			})
 		}
 	}
-	return res, nil
+	return res
 }
 
 // Preencher carrega a nota já lançada em um item.
@@ -210,11 +249,9 @@ func (m *modelo) teclaNavegacao(msg tea.KeyMsg) tea.Cmd {
 	m.aviso = ""
 	switch msg.String() {
 	case "q", "esc", "ctrl+c":
-		m.salvar = false
-		return tea.Quit
+		return m.encerrar(false)
 	case "enter":
-		m.salvar = true
-		return tea.Quit
+		return m.encerrar(true)
 	case "up", "k":
 		m.mover(-1)
 	case "down", "j":
@@ -273,6 +310,15 @@ func (m *modelo) teclaNavegacao(msg tea.KeyMsg) tea.Cmd {
 				_ = it
 			}
 		}
+	}
+	return nil
+}
+
+// encerrar fecha a correção, salvando ou não.
+func (m *modelo) encerrar(salvar bool) tea.Cmd {
+	m.salvar, m.encerrada = salvar, true
+	if m.autonomo {
+		return tea.Quit
 	}
 	return nil
 }

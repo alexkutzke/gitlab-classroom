@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
@@ -40,6 +41,16 @@ func (p *painel) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		return a.coletar([]turma.Exercicio{a.panorama.Exercicios[p.cursor].Exercicio}), true
+	case "n":
+		if total == 0 {
+			return nil, true
+		}
+		e := a.panorama.Exercicios[p.cursor].Exercicio
+		a.exercicio = e.ID
+		a.entregas.reiniciar()
+		return a.abrirCorrecao(e, acoes.FiltroCorrecao{}), true
+	case "E":
+		return a.exportar(), true
 	default:
 		return nil, false
 	}

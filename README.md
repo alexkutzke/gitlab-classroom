@@ -35,7 +35,51 @@ nunca é gravado dentro de `.classroom/`.
 classroom token    # diz de onde veio o token e testa a conexão
 ```
 
-## Uso
+## A interface interativa
+
+`classroom`, sem subcomando, abre a interface de terminal. Os subcomandos
+continuam valendo e são o caminho para scripts; fora de um terminal, o binário
+sem argumento imprime a ajuda em vez de tentar desenhar tela.
+
+```bash
+cd ~/.../2026-02/ds122/ds122_n
+classroom
+```
+
+A tela inicial é o painel: o que falta fazer e como anda cada exercício.
+`enter` abre um exercício e mostra a turma linha a linha, com situação da
+entrega, commits, resultado da suíte, marca de entrega em dupla e a nota.
+
+| Tecla | Onde | Ação |
+|---|---|---|
+| `j` `k`, setas, `g` `G`, `pgup` `pgdown` | todas | navega |
+| `enter` | painel, exercícios | abre |
+| `esc` `q` | todas | volta; no painel, sai |
+| `p` `x` `a` `e` `t` `?` | todas | painel, exercícios, alunos, equipes, tarefas, ajuda |
+| `r` | todas | relê os arquivos do disco |
+| `C` `S` | todas | coleta todos os exercícios; sincroniza o cadastro |
+| `c` `l` `v` | exercício | coleta, clona, verifica |
+| `n` `N` | exercício | corrige; só quem ainda não tem nota |
+| `o` `w` | exercício | abre o clone no `$EDITOR`; abre o projeto no GitLab |
+| `V` `X` | exercício | vincula e desvincula entrega em dupla |
+| `s` `/` | exercício | ordem (nome, situação, nota) e filtro |
+| `n` `T` `D` `P` `V` `I` `A` `z` | exercícios | cadastra, edita campos, arquiva, mostra arquivados |
+| `d` | equipes | desfaz o vínculo |
+| `E` | painel | exporta o relatório e a planilha de notas |
+
+As operações de rede rodam em segundo plano, com barra de progresso, e `esc`
+cancela. Coleta cancelada não grava nada: aplicar o que veio pela metade
+apagaria a entrega de quem não chegou a ser visitado. O que cada operação
+apurou fica na tela de tarefas, inclusive os erros por aluno, que de outro
+modo sumiriam com a barra de progresso.
+
+A tela de correção é a mesma do `classroom corrigir`, embutida como subtela:
+as teclas e as regras de nota são idênticas.
+
+Ação difícil de desfazer pede confirmação: arquivar exercício e desfazer
+vínculo de equipe.
+
+## Uso pela linha de comando
 
 ### Criar a turma
 
@@ -360,7 +404,9 @@ go install .
 | `internal/gitlab` | acesso à API, atrás de uma interface |
 | `internal/coleta` | percorre alunos e exercícios e classifica as entregas |
 | `internal/repo` | clones locais dos forks, com o git do sistema |
-| `internal/correcao` | interface interativa de correção (Bubble Tea) |
+| `internal/acoes` | as operações de estado, compartilhadas pela TUI e pelo CLI |
+| `internal/tui` | interface interativa (Bubble Tea) |
+| `internal/correcao` | tela de correção, usada solta e embutida na TUI |
 | `internal/verificacao` | execução da suíte automatizada em contêiner |
 | `internal/relatorio` | saídas de terminal |
 | `internal/export` | tabela de entregas em markdown e planilha de notas |
