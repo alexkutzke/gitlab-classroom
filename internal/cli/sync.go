@@ -2,13 +2,13 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/alexkutzke/gitlab-classroom/internal/coleta"
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/diario"
+	gl "github.com/alexkutzke/gitlab-classroom/internal/gitlab"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
@@ -35,38 +35,32 @@ func cmdSync() *cobra.Command {
 				pastaDiario = t.Config.PastaDiario
 			}
 
-			if !semDiario {
-				caminho := filepath.Join(s.Pasta(), pastaDiario)
-				alunos, err := diario.Ler(caminho)
-				switch e := err.(type) {
-				case nil:
-					res := diario.Importar(t, alunos)
-					relatarImportacao(res)
-				case *diario.ErrSemCadastro:
-					avisar("Aviso: %s. O cadastro atual foi mantido.", e)
-				default:
+			var cli gl.Cliente
+			if !semGitLab {
+				if cli, err = cliente(t.Config); err != nil {
 					return err
 				}
 			}
 
+			res, err := acoes.Sincronizar(t, s.Pasta(), cli, acoes.OpcoesSync{
+				PastaDiario: pastaDiario,
+				SemDiario:   semDiario,
+				SemGitLab:   semGitLab,
+			}, progressoTerminal())
+			if err != nil {
+				return err
+			}
+			limparProgresso()
+
+			if !semDiario {
+				if res.SemCadastro != "" {
+					avisar("Aviso: %s. O cadastro atual foi mantido.", res.SemCadastro)
+				} else {
+					relatarImportacao(res.Importacao)
+				}
+			}
 			if !semGitLab {
-				cli, err := cliente(t.Config)
-				if err != nil {
-					return err
-				}
-				ativos := t.Ativos()
-				col := &coleta.Coletor{
-					Cliente:   cli,
-					Config:    t.Config,
-					Progresso: progressoTerminal(len(ativos)),
-				}
-				atualizados, err := col.Reconciliar(ativos)
-				if err != nil {
-					return err
-				}
-				fmt.Println()
-				aplicarAlunos(t, atualizados)
-				relatarContas(t, atualizados)
+				relatarContas(t, res.Alunos)
 			}
 
 			if dryRun {
@@ -99,18 +93,6 @@ func relatarImportacao(r diario.Resultado) {
 	}
 }
 
-// aplicarAlunos leva de volta ao cadastro o que a reconciliação apurou.
-func aplicarAlunos(t *turma.Turma, atualizados []turma.Aluno) {
-	for _, a := range atualizados {
-		if p, ok := t.AlunoPorGRR(a.GRR); ok {
-			p.Grupo, p.SituacaoConta, p.VerificadoEm = a.Grupo, a.SituacaoConta, a.VerificadoEm
-			if a.Usuario != "" {
-				p.Usuario = a.Usuario
-			}
-		}
-	}
-}
-
 func relatarContas(t *turma.Turma, alunos []turma.Aluno) {
 	contagem := map[turma.SituacaoConta]int{}
 	for _, a := range alunos {
@@ -139,13 +121,16 @@ func relatarContas(t *turma.Turma, alunos []turma.Aluno) {
 	}
 }
 
-// progressoTerminal devolve o callback de progresso, que reescreve a mesma
-// linha para não encher a tela numa turma de trinta alunos.
-func progressoTerminal(total int) func(int, int, turma.Aluno) {
-	return func(feito, _ int, a turma.Aluno) {
-		fmt.Printf("\r%d/%d  %-40s", feito, total, primeiroNome(a.Nome))
+// progressoTerminal devolve o aviso de progresso, que reescreve a mesma linha
+// para não encher a tela numa turma de trinta alunos.
+func progressoTerminal() acoes.AvisoProgresso {
+	return func(p acoes.Progresso) {
+		fmt.Printf("\r%d/%d  %-40s", p.Feito, p.Total, primeiroNome(p.Rotulo))
 	}
 }
+
+// limparProgresso apaga a linha de progresso antes do relatório final.
+func limparProgresso() { fmt.Print("\r\033[K") }
 
 func primeiroNome(nome string) string {
 	if i := strings.IndexByte(nome, ' '); i > 0 {

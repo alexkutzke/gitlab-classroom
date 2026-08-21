@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
@@ -30,7 +31,7 @@ func cmdEquipes() *cobra.Command {
 			}
 			exercicios := t.ExerciciosAtivos()
 			if len(ids) > 0 {
-				if exercicios, err = escolherExercicios(t, ids); err != nil {
+				if exercicios, err = acoes.EscolherExercicios(t, ids); err != nil {
 					return err
 				}
 			}

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/alexkutzke/gitlab-classroom/internal/coleta"
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/relatorio"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
@@ -33,48 +33,19 @@ func cmdColetar() *cobra.Command {
 				return err
 			}
 
-			exercicios, err := escolherExercicios(t, ids)
+			exercicios, err := acoes.EscolherExercicios(t, ids)
 			if err != nil {
 				return err
-			}
-			alunos := t.Ativos()
-			if len(alunos) == 0 {
-				return fmt.Errorf("nenhum aluno ativo: rode `classroom sync` para importar o cadastro")
 			}
 
 			cli, err := cliente(t.Config)
 			if err != nil {
 				return err
 			}
-			col := &coleta.Coletor{
-				Cliente:   cli,
-				Config:    t.Config,
-				Progresso: progressoTerminal(len(alunos)),
-			}
-			res, err := col.Coletar(alunos, exercicios)
-			if err != nil {
+			if _, err := acoes.Coletar(t, cli, exercicios, progressoTerminal()); err != nil {
 				return err
 			}
-			fmt.Print("\r\033[K")
-
-			aplicarAlunos(t, res.Alunos)
-			for _, e := range exercicios {
-				var doExercicio []turma.Entrega
-				for _, en := range res.Entregas {
-					if en.Exercicio == e.ID {
-						doExercicio = append(doExercicio, en)
-					}
-				}
-				t.SubstituirEntregas(e.ID, doExercicio)
-
-				var vinculos []turma.Vinculo
-				for _, v := range res.Vinculos {
-					if v.Exercicio == e.ID {
-						vinculos = append(vinculos, v)
-					}
-				}
-				t.SubstituirVinculosDescobertos(e.ID, vinculos)
-			}
+			limparProgresso()
 			relatarEquipes(t, exercicios)
 
 			for _, e := range exercicios {
@@ -128,24 +99,4 @@ func nomeOuGRR(a *turma.Aluno, grr string) string {
 		return grr
 	}
 	return a.Nome
-}
-
-// escolherExercicios resolve os ids informados, ou devolve todos os ativos.
-func escolherExercicios(t *turma.Turma, ids []string) ([]turma.Exercicio, error) {
-	if len(ids) == 0 {
-		es := t.ExerciciosAtivos()
-		if len(es) == 0 {
-			return nil, fmt.Errorf("nenhum exercício cadastrado: use `classroom exercicios add`")
-		}
-		return es, nil
-	}
-	var out []turma.Exercicio
-	for _, id := range ids {
-		e, ok := t.Exercicio(id)
-		if !ok {
-			return nil, fmt.Errorf("exercício %q não encontrado", id)
-		}
-		out = append(out, *e)
-	}
-	return out, nil
 }

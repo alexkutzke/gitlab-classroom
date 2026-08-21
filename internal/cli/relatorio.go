@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/export"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
@@ -35,7 +36,7 @@ func cmdRelatorio() *cobra.Command {
 			}
 			var exercicios []turma.Exercicio
 			if len(ids) > 0 {
-				if exercicios, err = escolherExercicios(t, ids); err != nil {
+				if exercicios, err = acoes.EscolherExercicios(t, ids); err != nil {
 					return err
 				}
 			}

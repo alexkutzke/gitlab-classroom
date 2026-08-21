@@ -4,15 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/alexkutzke/gitlab-classroom/internal/repo"
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
-	"github.com/alexkutzke/gitlab-classroom/internal/verificacao"
 )
 
 func cmdVerificar() *cobra.Command {
@@ -52,87 +50,34 @@ func cmdVerificar() *cobra.Command {
 					e.ID, e.ID)
 			}
 
-			entregas := t.EntregasDoExercicio(e.ID)
-			// Uma entrega em dupla é um fork só: a suíte roda uma vez, e o
-			// resultado vale para todos os integrantes.
-			var alvos []verificacao.Alvo
-			porDono := map[string][]string{}
-			for _, a := range t.Ativos() {
-				if grr != "" && !strings.EqualFold(a.GRR, grr) {
-					continue
-				}
-				dono := donoDaEntrega(t, e.ID, a)
-				if _, visto := porDono[dono.GRR]; !visto {
-					alvos = append(alvos, verificacao.Alvo{
-						GRR:    dono.GRR,
-						Nome:   dono.Nome,
-						Dir:    repo.Caminho(s.Pasta(), t.Config.PastaEntregas, e.ID, dono),
-						Commit: entregas[dono.GRR].Commit,
-					})
-				}
-				porDono[dono.GRR] = append(porDono[dono.GRR], a.GRR)
-			}
-			if len(alvos) == 0 {
-				return fmt.Errorf("nenhum aluno a verificar")
-			}
-
 			if semSandbox && !sim {
 				if err := confirmarExecucaoDireta(e); err != nil {
 					return err
 				}
 			}
 
-			opts := verificacao.Opcoes{
-				Exercicio:   *e,
+			res, err := acoes.Verificar(t, s.Pasta(), *e, acoes.OpcoesVerificacao{
+				GRR:         grr,
 				Imagem:      imagem,
+				Runtime:     runtime,
 				TempoLimite: time.Duration(segundos) * time.Second,
 				SemSandbox:  semSandbox,
 				Escrita:     escrita,
-				Runtime:     runtime,
-				PastaLogs:   filepath.Join(repo.Base(s.Pasta(), t.Config.PastaEntregas, e.ID), ".logs"),
-			}
-			if opts.TempoLimite <= 0 {
-				opts.TempoLimite = time.Duration(t.Config.TempoLimiteVerificacao) * time.Second
-			}
-			if opts.Imagem == "" && e.Imagem == "" {
-				opts.Imagem = t.Config.ImagemVerificacao
-			}
-
-			total := len(alvos)
-			res, err := verificacao.Executar(alvos, opts, t.Config.Paralelismo,
-				func(feito, _ int, a verificacao.Alvo) {
-					fmt.Printf("\r%d/%d  %-40s", feito, total, primeiroNome(a.Nome))
-				})
+			}, progressoTerminal())
 			if err != nil {
 				return err
 			}
-			fmt.Print("\r\033[K")
+			limparProgresso()
 
-			contagem := map[turma.SituacaoVerificacao]int{}
-			for _, v := range res {
-				if v.Situacao == turma.Reprovado || v.Situacao == turma.ErroVerificacao {
-					a, _ := t.AlunoPorGRR(v.GRR)
-					nome := v.GRR
-					if a != nil {
-						nome = a.Nome
-					}
-					fmt.Printf("  %-40s %s\n", nome, v.Resumo())
-				}
-				// O resultado do fork vale para cada integrante da entrega,
-				// e assim o relatório continua tendo uma linha por aluno.
-				for _, integrante := range porDono[v.GRR] {
-					contagem[v.Situacao]++
-					if !dryRun {
-						copia := v
-						copia.GRR = integrante
-						t.RegistrarVerificacao(copia)
-					}
-				}
+			for _, v := range res.Problemas {
+				a, _ := t.AlunoPorGRR(v.GRR)
+				fmt.Printf("  %-40s %s\n", nomeOuGRR(a, v.GRR), v.Resumo())
 			}
+			contagem := res.Contagem
 			fmt.Printf("%d aprovado(s), %d reprovado(s), %d sem clone, %d com erro.\n",
 				contagem[turma.Aprovado], contagem[turma.Reprovado],
 				contagem[turma.SemClone], contagem[turma.ErroVerificacao])
-			fmt.Printf("Saída completa em %s\n", opts.PastaLogs)
+			fmt.Printf("Saída completa em %s\n", res.PastaLogs)
 
 			if dryRun {
 				fmt.Println("Nada foi gravado (--dry-run).")

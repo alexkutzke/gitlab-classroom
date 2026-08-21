@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/correcao"
 	"github.com/alexkutzke/gitlab-classroom/internal/export"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
@@ -37,31 +38,8 @@ func cmdCorrigir() *cobra.Command {
 				return fmt.Errorf("exercício %q não encontrado", id)
 			}
 
-			entregas := t.EntregasDoExercicio(e.ID)
-			verificacoes := t.VerificacoesDoExercicio(e.ID)
-			var itens []correcao.Item
-			for _, a := range t.Ativos() {
-				en := entregas[a.GRR]
-				if soEntregues && en.Situacao != turma.Entregue {
-					continue
-				}
-				item := correcao.Item{
-					Aluno:       a,
-					Entrega:     en,
-					Verificacao: verificacoes[a.GRR],
-					Dir:         dirDaEntrega(t, s.Pasta(), e.ID, a),
-				}
-				if equipe := t.Equipe(e.ID, a.GRR); len(equipe) > 1 {
-					item.Equipe = nomesDaEquipe(t, equipe, a.GRR)
-				}
-				if n, ok := t.Nota(e.ID, a.GRR); ok {
-					if semNota {
-						continue
-					}
-					item.Preencher(*n)
-				}
-				itens = append(itens, item)
-			}
+			itens := acoes.ItensDeCorrecao(t, s.Pasta(), *e,
+				acoes.FiltroCorrecao{SoEntregues: soEntregues, SemNota: semNota})
 			if len(itens) == 0 {
 				return fmt.Errorf("nenhum aluno a corrigir em %s com esses filtros", e.ID)
 			}
@@ -80,17 +58,11 @@ func cmdCorrigir() *cobra.Command {
 				return nil
 			}
 
-			for _, n := range res.Notas {
-				t.RegistrarNota(n)
-			}
-			for _, grr := range res.Removidas {
-				t.RemoverNota(e.ID, grr)
-			}
+			lancadas, apagadas := acoes.AplicarCorrecao(t, e.ID, res)
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
-			fmt.Printf("%d nota(s) lançada(s), %d apagada(s) em %s.\n",
-				len(res.Notas), len(res.Removidas), e.ID)
+			fmt.Printf("%d nota(s) lançada(s), %d apagada(s) em %s.\n", lancadas, apagadas, e.ID)
 			return nil
 		},
 	}
@@ -101,22 +73,6 @@ func cmdCorrigir() *cobra.Command {
 	c.Flags().BoolVar(&semNota, "sem-nota", false, "listar só quem ainda não tem nota")
 	c.MarkFlagRequired("exercicio")
 	return c
-}
-
-// nomesDaEquipe devolve os nomes dos demais integrantes da entrega.
-func nomesDaEquipe(t *turma.Turma, equipe []string, exceto string) []string {
-	var out []string
-	for _, grr := range equipe {
-		if grr == exceto {
-			continue
-		}
-		if a, ok := t.AlunoPorGRR(grr); ok {
-			out = append(out, primeiroNome(a.Nome))
-			continue
-		}
-		out = append(out, grr)
-	}
-	return out
 }
 
 func cmdNota() *cobra.Command {
@@ -144,20 +100,8 @@ func cmdNota() *cobra.Command {
 				return fmt.Errorf("aluno %q não encontrado", grr)
 			}
 
-			// A entrega em dupla é um trabalho só: por padrão a nota vale
-			// para todos os integrantes, como na interface de correção.
-			alvos := []string{a.GRR}
-			if !soEste {
-				alvos = t.Equipe(e.ID, a.GRR)
-			}
-
 			if remover {
-				apagadas := 0
-				for _, alvo := range alvos {
-					if t.RemoverNota(e.ID, alvo) {
-						apagadas++
-					}
-				}
+				apagadas := acoes.ApagarNota(t, e.ID, a.GRR, soEste)
 				if apagadas == 0 {
 					return fmt.Errorf("%s não tem nota em %s", a.GRR, e.ID)
 				}
@@ -174,20 +118,14 @@ func cmdNota() *cobra.Command {
 			if valor < 0 || valor > t.Config.NotaMaxima {
 				return fmt.Errorf("nota %g fora da escala 0 a %g", valor, t.Config.NotaMaxima)
 			}
-			for _, alvo := range alvos {
-				n := turma.Nota{Exercicio: e.ID, GRR: alvo, Valor: valor, Comentario: comentario}
-				if anterior, ok := t.Nota(e.ID, alvo); ok && !cmd.Flags().Changed("comentario") {
-					n.Comentario = anterior.Comentario
-				}
-				n.CorrigidoEm = agora()
-				t.RegistrarNota(n)
-			}
+			alvos := acoes.LancarNota(t, e.ID, a.GRR, valor, comentario,
+				cmd.Flags().Changed("comentario"), soEste)
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
 			if len(alvos) > 1 {
 				fmt.Printf("%g em %s para a entrega de %s.\n",
-					valor, e.ID, strings.Join(nomesDaEquipe(t, alvos, ""), " e "))
+					valor, e.ID, strings.Join(acoes.NomesDaEquipe(t, alvos, ""), " e "))
 				return nil
 			}
 			fmt.Printf("%s em %s: %g.\n", a.Nome, e.ID, valor)
@@ -230,7 +168,7 @@ func cmdNotas() *cobra.Command {
 			}
 			var exercicios []turma.Exercicio
 			if len(ids) > 0 {
-				if exercicios, err = escolherExercicios(t, ids); err != nil {
+				if exercicios, err = acoes.EscolherExercicios(t, ids); err != nil {
 					return err
 				}
 			}
