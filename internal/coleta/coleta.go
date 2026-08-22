@@ -33,6 +33,25 @@ type Resultado struct {
 	// Vinculos são as entregas compartilhadas descobertas no GitLab, uma
 	// linha por integrante que não é dono do fork.
 	Vinculos []turma.Vinculo
+	// Desconhecidos são os membros de fork que não casam com nenhum aluno.
+	Desconhecidos []MembroDesconhecido
+}
+
+// MembroDesconhecido é alguém adicionado ao fork de um aluno cujo login não
+// corresponde a nenhum cadastro da turma.
+//
+// Costuma ser o colega de dupla que não conseguiu criar a conta com o GRR e
+// usou outro login. Enquanto o login não for cadastrado, a entrega em dupla
+// não é atribuída a ele, e o relatório publicado o mostra como quem não
+// entregou.
+type MembroDesconhecido struct {
+	Exercicio string
+	Usuario   string
+	Nome      string
+	Projeto   string
+	// DonoGRR e DonoNome identificam o aluno em cujo fork o membro está.
+	DonoGRR  string
+	DonoNome string
 }
 
 // Reconciliar resolve o grupo e a situação da conta de cada aluno, sem olhar
@@ -53,7 +72,7 @@ func (c *Coletor) Coletar(ctx context.Context, alunos []turma.Aluno, exercicios 
 	if err := ctx.Err(); err != nil {
 		return Resultado{}, err
 	}
-	equipes := c.descobrirEquipes(ctx, atualizados, exercicios)
+	equipes, desconhecidos := c.descobrirEquipes(ctx, atualizados, exercicios)
 	if err := ctx.Err(); err != nil {
 		return Resultado{}, err
 	}
@@ -64,7 +83,10 @@ func (c *Coletor) Coletar(ctx context.Context, alunos []turma.Aluno, exercicios 
 		// isso apagaria a entrega deles. Melhor não devolver nada.
 		return Resultado{}, err
 	}
-	return Resultado{Entregas: entregas, Alunos: atualizados, Vinculos: vinculos}, nil
+	return Resultado{
+		Entregas: entregas, Alunos: atualizados,
+		Vinculos: vinculos, Desconhecidos: desconhecidos,
+	}, nil
 }
 
 // --- fase 1: grupos ---
@@ -261,15 +283,18 @@ func (e equipes) convite(exercicio, grr string) (convite, bool) {
 //
 // Falha aqui não interrompe a coleta: sem a descoberta, cada aluno é avaliado
 // pelo próprio grupo, que era o comportamento anterior.
-func (c *Coletor) descobrirEquipes(ctx context.Context, alunos []turma.Aluno, exercicios []turma.Exercicio) equipes {
+func (c *Coletor) descobrirEquipes(ctx context.Context, alunos []turma.Aluno, exercicios []turma.Exercicio) (equipes, []MembroDesconhecido) {
 	if len(exercicios) == 0 {
-		return nil
+		return nil, nil
 	}
 	porUsuario := map[string]turma.Aluno{}
 	for _, a := range alunos {
 		porUsuario[turma.UsuarioGitLab(a.UsuarioEsperado())] = a
 		porUsuario[turma.UsuarioGitLab(a.GRR)] = a
 	}
+	// O dono do token entra na lista de membros de todo fork, por herança do
+	// grupo, e não é aluno nenhum.
+	eu, _ := c.Cliente.Eu()
 
 	comGrupo := make([]turma.Aluno, 0, len(alunos))
 	for _, a := range alunos {
@@ -278,9 +303,10 @@ func (c *Coletor) descobrirEquipes(ctx context.Context, alunos []turma.Aluno, ex
 		}
 	}
 	if len(comGrupo) == 0 {
-		return nil
+		return nil, nil
 	}
 
+	var desconhecidos []MembroDesconhecido
 	out := equipes{}
 	for _, e := range exercicios {
 		type achado struct {
@@ -315,8 +341,19 @@ func (c *Coletor) descobrirEquipes(ctx context.Context, alunos []turma.Aluno, ex
 				continue
 			}
 			for _, m := range ac.membros {
-				colega, ok := porUsuario[turma.UsuarioGitLab(m.Usuario)]
-				if !ok || colega.GRR == ac.dono.GRR {
+				login := turma.UsuarioGitLab(m.Usuario)
+				colega, ok := porUsuario[login]
+				if !ok {
+					if login != turma.UsuarioGitLab(eu) {
+						desconhecidos = append(desconhecidos, MembroDesconhecido{
+							Exercicio: e.ID, Usuario: m.Usuario, Nome: m.Nome,
+							Projeto: ac.fork.Completo,
+							DonoGRR: ac.dono.GRR, DonoNome: ac.dono.Nome,
+						})
+					}
+					continue
+				}
+				if colega.GRR == ac.dono.GRR {
 					continue
 				}
 				doExercicio[colega.GRR] = convite{Dono: ac.dono, Projeto: ac.fork}
@@ -326,7 +363,34 @@ func (c *Coletor) descobrirEquipes(ctx context.Context, alunos []turma.Aluno, ex
 			out[e.ID] = doExercicio
 		}
 	}
-	return out
+	ordenarDesconhecidos(desconhecidos)
+	return out, desconhecidos
+}
+
+// ordenarDesconhecidos deixa a lista estável para o comando e o relatório não
+// mudarem de ordem entre execuções.
+func ordenarDesconhecidos(ds []MembroDesconhecido) {
+	sort.SliceStable(ds, func(i, j int) bool {
+		if ds[i].Exercicio != ds[j].Exercicio {
+			return ds[i].Exercicio < ds[j].Exercicio
+		}
+		if ds[i].DonoNome != ds[j].DonoNome {
+			return ds[i].DonoNome < ds[j].DonoNome
+		}
+		return ds[i].Usuario < ds[j].Usuario
+	})
+}
+
+// MembrosDesconhecidos varre os forks da turma e devolve só os membros que
+// não casam com nenhum aluno. É a fase 2 da coleta, isolada, para o professor
+// poder rodar sem mexer no que já foi apurado.
+func (c *Coletor) MembrosDesconhecidos(ctx context.Context, alunos []turma.Aluno, exercicios []turma.Exercicio) ([]MembroDesconhecido, error) {
+	comGrupo := c.resolverGrupos(ctx, alunos, "grupos")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	_, desconhecidos := c.descobrirEquipes(ctx, comGrupo, exercicios)
+	return desconhecidos, ctx.Err()
 }
 
 // --- fase 3: entregas ---

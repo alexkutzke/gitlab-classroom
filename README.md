@@ -64,7 +64,7 @@ entrega, commits, resultado da suíte, marca de entrega em dupla e a nota.
 | `V` `X` | exercício | vincula e desvincula entrega em dupla |
 | `s` `/` | exercício | ordem (nome, situação, nota) e filtro |
 | `n` `T` `D` `P` `V` `I` `A` `z` | exercícios | cadastra, edita campos, arquiva, mostra arquivados |
-| `d` | equipes | desfaz o vínculo |
+| `d` `u` | equipes | desfaz o vínculo; procura membro de fork sem cadastro |
 | `E` | painel | exporta o relatório e a planilha de notas |
 
 As operações de rede rodam em segundo plano, com barra de progresso, e `esc`
@@ -284,9 +284,27 @@ ele foi adicionado. O resultado fica em `equipes.csv`.
 
 ```bash
 classroom equipes
+classroom equipes desconhecidos
 classroom equipes vincular --exercicio html --grr GRR20259002 --dono GRR20259001
 classroom equipes desvincular --exercicio html --grr GRR20259002
 ```
+
+O membro do fork é ligado ao aluno pelo login, e o aluno que não conseguiu
+criar a conta com o GRR não é reconhecido: a entrega em dupla dele fica sem
+dono, e o relatório publicado o mostra como quem não entregou. O
+`desconhecidos` varre os forks da turma e lista os logins sem correspondência,
+com o palpite de quem pode ser, tirado da semelhança entre o nome da conta e
+os nomes da turma:
+
+```
+EXERCÍCIO  LOGIN             NOME NO GITLAB             NO FORK DE  PALPITE
+html       leticiamarobim15  Leticia Marobim de Barros  o próprio   GRR20262490  LETICIA ...
+```
+
+Palpite não é confirmação, e nada é gravado. Confira e cadastre com
+`classroom alunos editar --grr ... --usuario ...`, que é o que faz a coleta
+seguinte reconhecer o aluno. A coleta comum também conta quantos membros
+ficaram sem correspondência, para o caso não passar despercebido.
 
 O `vincular` cobre a dupla que trabalhou junto sem adicionar o colega ao
 projeto, caso em que não há o que descobrir. Vínculo cadastrado à mão não é

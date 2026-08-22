@@ -683,6 +683,32 @@ func TestMembroForaDoCadastroEhIgnorado(t *testing.T) {
 	}
 }
 
+func TestMembroDeForkForaDoCadastroEhRelatado(t *testing.T) {
+	c := baseFalsa()
+	fork := grupoAna + "/ds122-html-assignment"
+	c.commits[fork] = []gl.Commit{
+		{SHA: "aluno1", Data: time.Date(2026, 9, 1, 10, 0, 0, 0, time.Local)},
+	}
+	c.membros = map[string][]gl.Membro{fork: {
+		{Usuario: "grr20259001", Nome: "Ana Souza", NivelAcesso: 50},
+		{Usuario: "alexkutzke", Nome: "Alexander Kutzke", NivelAcesso: 20},
+		{Usuario: "bruno.lima", Nome: "Bruno Lima", NivelAcesso: 30},
+	}}
+
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{exercicioExemplo()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Desconhecidos) != 1 {
+		t.Fatalf("desconhecidos = %+v, queria só o bruno.lima", res.Desconhecidos)
+	}
+	d := res.Desconhecidos[0]
+	if d.Usuario != "bruno.lima" || d.DonoGRR != "GRR20259001" || d.Exercicio != "html" {
+		t.Errorf("desconhecido = %+v", d)
+	}
+}
+
 func TestFalhaNaDescobertaDeEquipesNaoDerrubaAColeta(t *testing.T) {
 	c := duplaFalsa()
 	c.erroMembros = errors.New("indisponível") // a consulta de membros falhou

@@ -198,6 +198,9 @@ type ResumoColeta struct {
 	Situacoes map[string]map[turma.SituacaoEntrega]int
 	// Compartilhadas conta as entregas em dupla por exercício.
 	Compartilhadas map[string]int
+	// Desconhecidos são os membros de fork que não casam com aluno nenhum.
+	// Cada um é uma entrega em dupla que ficou sem dono.
+	Desconhecidos []coleta.MembroDesconhecido
 }
 
 // Coletar percorre o GitLab e aplica na turma as entregas e os vínculos de
@@ -257,7 +260,58 @@ func Coletar(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios []t
 		res.Situacoes[e.ID] = contagem
 		res.Compartilhadas[e.ID] = len(t.VinculosDoExercicio(e.ID))
 	}
+	res.Desconhecidos = saida.Desconhecidos
 	return res, nil
+}
+
+// MembrosDesconhecidos lista quem foi adicionado aos forks da turma sem casar
+// com nenhum aluno do cadastro, com a sugestão de quem pode ser.
+func MembrosDesconhecidos(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios []turma.Exercicio, prog AvisoProgresso) ([]MembroNaoReconhecido, error) {
+	if cli == nil {
+		return nil, fmt.Errorf("sem conexão com o GitLab")
+	}
+	cli.Renovar()
+
+	alunos := t.Ativos()
+	if len(alunos) == 0 {
+		return nil, fmt.Errorf("nenhum aluno ativo: rode `classroom sync` para importar o cadastro")
+	}
+	col := &coleta.Coletor{
+		Cliente: cli,
+		Config:  t.Config,
+		Progresso: func(feito, total int, rotulo string) {
+			prog.avisar(feito, total, rotulo)
+		},
+	}
+	achados, err := col.MembrosDesconhecidos(ctx, alunos, exercicios)
+	if err != nil {
+		return nil, err
+	}
+	return ComSugestao(t, achados), nil
+}
+
+// MembroNaoReconhecido junta o membro achado no GitLab com o palpite de quem
+// ele é no cadastro.
+type MembroNaoReconhecido struct {
+	coleta.MembroDesconhecido
+	// Sugestao é o aluno de nome parecido, quando há um só. Vazio quando o
+	// palpite seria chute.
+	Sugestao    turma.Aluno
+	TemSugestao bool
+}
+
+// ComSugestao acrescenta a cada membro o aluno de nome parecido.
+func ComSugestao(t *turma.Turma, achados []coleta.MembroDesconhecido) []MembroNaoReconhecido {
+	ativos := t.Ativos()
+	out := make([]MembroNaoReconhecido, 0, len(achados))
+	for _, m := range achados {
+		item := MembroNaoReconhecido{MembroDesconhecido: m}
+		if a, ok := turma.Sugerir(ativos, m.Nome, m.Usuario); ok {
+			item.Sugestao, item.TemSugestao = a, true
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 // --- clone ---

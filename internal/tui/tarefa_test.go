@@ -18,6 +18,7 @@ type clienteFalso struct {
 	grupos   map[string]gl.Grupo
 	projetos map[string][]gl.Projeto
 	commits  map[string][]gl.Commit
+	membros  map[string][]gl.Membro
 	// renovacoes conta os pedidos de descarte do cache.
 	renovacoes int
 }
@@ -59,7 +60,9 @@ func (c *clienteFalso) Commits(projeto, ramo string, todos bool) ([]gl.Commit, e
 	return c.commits[projeto], nil
 }
 
-func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) { return nil, nil }
+func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) {
+	return c.membros[projeto], nil
+}
 
 func clienteComEntrega() *clienteFalso {
 	grupo := "ds122-2026-2-n-grr20259001"
@@ -157,6 +160,37 @@ func TestCadaColetaDescartaOCacheDoCliente(t *testing.T) {
 	bombear(t, a, teclarCmd(a, "c"))
 	if c.renovacoes != 2 {
 		t.Errorf("renovações = %d: a segunda coleta também precisa partir do zero", c.renovacoes)
+	}
+}
+
+func TestBuscaDeMembroSemCadastroListaNaTelaDeTarefas(t *testing.T) {
+	c := clienteComEntrega()
+	fork := "ds122-2026-2-n-grr20259001/ds122-prepare-assignment"
+	c.membros = map[string][]gl.Membro{fork: {
+		{Usuario: "grr20259001", Nome: "Ana Souza", NivelAcesso: 50},
+		{Usuario: "alexkutzke", Nome: "Alexander Kutzke", NivelAcesso: 20},
+		{Usuario: "bruno.lima", Nome: "Bruno Lima", NivelAcesso: 30},
+	}}
+	a := appComCliente(t, c)
+
+	teclar(a, "e") // tela de equipes
+	bombear(t, a, teclarCmd(a, "u"))
+
+	if a.erro != "" {
+		t.Fatalf("erro: %s", a.erro)
+	}
+	juntas := strings.Join(a.tarefas.linhas, "\n")
+	if !strings.Contains(juntas, "bruno.lima") {
+		t.Errorf("tarefas = %q, queria o login sem cadastro", juntas)
+	}
+	if !strings.Contains(juntas, "GRR20259002") {
+		t.Errorf("tarefas = %q, queria o palpite pelo nome", juntas)
+	}
+	if strings.Contains(juntas, "alexkutzke") {
+		t.Error("o dono do token é membro de todo fork e não pode entrar na lista")
+	}
+	if strings.Contains(juntas, "grr20259001") {
+		t.Error("login que casa com o cadastro não é desconhecido")
 	}
 }
 

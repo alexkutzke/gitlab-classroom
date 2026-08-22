@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
+	"github.com/alexkutzke/gitlab-classroom/internal/coleta"
 	"github.com/alexkutzke/gitlab-classroom/internal/relatorio"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
@@ -42,11 +43,13 @@ func cmdColetar() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := acoes.Coletar(cmd.Context(), t, cli, exercicios, progressoTerminal()); err != nil {
+			res, err := acoes.Coletar(cmd.Context(), t, cli, exercicios, progressoTerminal())
+			if err != nil {
 				return err
 			}
 			limparProgresso()
 			relatarEquipes(t, exercicios)
+			relatarDesconhecidos(res.Desconhecidos)
 
 			for _, e := range exercicios {
 				entregas := t.EntregasDoExercicio(e.ID)
@@ -76,7 +79,7 @@ func cmdColetar() *cobra.Command {
 // muda o que o professor vai abrir e quantas notas vai lançar.
 func relatarEquipes(t *turma.Turma, exercicios []turma.Exercicio) {
 	for _, e := range exercicios {
-		vinculos := t.VinculosDoExercicio(e.ID)
+		vinculos := t.VinculosEmOrdem(e.ID)
 		if len(vinculos) == 0 {
 			continue
 		}
@@ -92,6 +95,17 @@ func relatarEquipes(t *turma.Turma, exercicios []turma.Exercicio) {
 				nomeOuGRR(integrante, v.GRR), nomeOuGRR(dono, v.Dono), marca)
 		}
 	}
+}
+
+// relatarDesconhecidos avisa dos membros de fork que não casam com aluno
+// nenhum. Cada um é uma entrega em dupla que ficou sem dono, e o aviso é a
+// única chance de o professor perceber antes de publicar o relatório.
+func relatarDesconhecidos(ds []coleta.MembroDesconhecido) {
+	if len(ds) == 0 {
+		return
+	}
+	avisar("%d membro(s) de fork sem correspondência no cadastro. "+
+		"Veja `classroom equipes desconhecidos`.", len(ds))
 }
 
 func nomeOuGRR(a *turma.Aluno, grr string) string {

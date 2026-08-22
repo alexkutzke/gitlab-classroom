@@ -206,13 +206,17 @@ func (tq *telaEquipes) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		v := lista[tq.cursor]
 		a.desvincular(v.Vinculo.Exercicio, v.Vinculo, v.Integrante)
+	case "u":
+		return a.desconhecidos(), true
 	default:
 		return nil, false
 	}
 	return nil, true
 }
 
-func (tq *telaEquipes) atalhos() string { return "d desfaz o vínculo" }
+func (tq *telaEquipes) atalhos() string {
+	return "d desfaz o vínculo · u procura membro sem cadastro"
+}
 
 func (tq *telaEquipes) desenhar(a *App) string {
 	var b strings.Builder
@@ -222,7 +226,9 @@ func (tq *telaEquipes) desenhar(a *App) string {
 		b.WriteString(estFraco.Render(
 			"  A coleta descobre sozinha quem é membro do fork de outro aluno.\n"+
 				"  Para a dupla que não adicionou o colega ao projeto, use\n"+
-				"  `classroom equipes vincular`.") + "\n")
+				"  `classroom equipes vincular`.\n\n"+
+				"  u procura membro de fork cujo login não está no cadastro,\n"+
+				"  que é o motivo mais comum de uma dupla passar despercebida.") + "\n")
 		return b.String()
 	}
 
@@ -347,6 +353,10 @@ func (aj *ajuda) desenhar(a *App) string {
 		}},
 		{"Alunos", [][2]string{
 			{"P", "mostra só quem tem pendência de cadastro"},
+		}},
+		{"Equipes", [][2]string{
+			{"d", "desfaz o vínculo sob o cursor"},
+			{"u", "procura membro de fork sem cadastro"},
 		}},
 		{"Exercícios (x)", [][2]string{
 			{"n", "cadastra um exercício"},

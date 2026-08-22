@@ -92,6 +92,46 @@ func (a *App) verificar(e turma.Exercicio) tea.Cmd {
 	})
 }
 
+// desconhecidos varre os forks atrás de membros que não casam com o cadastro.
+//
+// O resultado vai para a tela de tarefas: são poucas linhas, e o professor
+// precisa delas na mão para decidir se cadastra o login.
+func (a *App) desconhecidos() tea.Cmd {
+	exercicios := a.turma.ExerciciosAtivos()
+	if len(exercicios) == 0 {
+		a.erro = "nenhum exercício cadastrado"
+		return nil
+	}
+	cli, err := a.conectar()
+	if err != nil {
+		a.erro = err.Error()
+		return nil
+	}
+	return a.iniciar("busca de membros não reconhecidos",
+		func(ctx context.Context, prog acoes.AvisoProgresso) fimMsg {
+			achados, err := acoes.MembrosDesconhecidos(ctx, a.turma, cli, exercicios, prog)
+			if err != nil {
+				return fimMsg{err: err}
+			}
+			if len(achados) == 0 {
+				return fimMsg{resumo: "todo membro de fork corresponde a um aluno"}
+			}
+			var detalhes []string
+			for _, m := range achados {
+				palpite := "sem palpite"
+				if m.TemSugestao {
+					palpite = "talvez " + m.Sugestao.GRR + " " + m.Sugestao.Nome
+				}
+				detalhes = append(detalhes, fmt.Sprintf("%s: %s (%s) no fork de %s, %s",
+					m.Exercicio, m.Usuario, m.Nome, m.DonoNome, palpite))
+			}
+			return fimMsg{
+				resumo:   fmt.Sprintf("%d membro(s) sem correspondência, veja a tela de tarefas", len(achados)),
+				detalhes: detalhes,
+			}
+		})
+}
+
 // sincronizar reimporta o cadastro do diario e reconcilia as contas.
 func (a *App) sincronizar() tea.Cmd {
 	cli, err := a.conectar()

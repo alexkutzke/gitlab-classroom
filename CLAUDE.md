@@ -234,8 +234,11 @@ Regras que o código precisa manter:
   tudo;
 - falha na descoberta não interrompe a coleta. Sem ela, cada aluno é avaliado
   pelo próprio grupo, que era o comportamento anterior à fase 5;
-- membro que não está no cadastro da turma é ignorado, o que já descarta o
-  professor e eventuais monitores;
+- membro que não está no cadastro da turma não vira vínculo, mas é registrado
+  em `Resultado.Desconhecidos` e contado no fim da coleta. O login que não é o
+  GRR é o motivo mais comum de uma dupla passar despercebida, e ignorar em
+  silêncio transformava isso em nota errada. O dono do token sai da lista, que
+  senão traria o professor em todo fork;
 - aluno sem grupo visível ainda pode ter entregado no fork do colega, então o
   problema de conta não encerra a busca;
 - um fork, um clone. O integrante que não é dono aponta para a pasta do dono,
@@ -244,6 +247,12 @@ Regras que o código precisa manter:
 A nota continua sendo por aluno, porque é ela que entra na média, mas lançar a
 de um integrante lança a dos demais por padrão, na interface e no comando
 avulso. `D` e `--so-este` desligam isso.
+
+`classroom equipes desconhecidos` (e `u` na tela de equipes) faz a varredura
+sozinha e mostra os logins sem dono com um palpite de quem são, de
+`turma.Sugerir`: dois pedaços de nome em comum, partículas fora, e resposta só
+quando o candidato é único. O palpite nunca grava nada, porque errar aqui
+significa atribuir a entrega de um aluno a outro.
 
 ## Interface interativa
 

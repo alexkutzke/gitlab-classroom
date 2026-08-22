@@ -487,6 +487,19 @@ func (t *Turma) VinculosDoExercicio(exercicio string) map[string]Vinculo {
 	return out
 }
 
+// VinculosEmOrdem devolve os vínculos do exercício em ordem estável, para
+// saída de comando e tela não mudarem de posição entre execuções.
+func (t *Turma) VinculosEmOrdem(exercicio string) []Vinculo {
+	var out []Vinculo
+	for _, v := range t.Vinculos {
+		if v.Exercicio == exercicio {
+			out = append(out, v)
+		}
+	}
+	ordenarVinculos(out)
+	return out
+}
+
 // RegistrarVinculo insere ou substitui o vínculo de um integrante.
 func (t *Turma) RegistrarVinculo(v Vinculo) {
 	v.GRR, v.Dono = NormalizarGRR(v.GRR), NormalizarGRR(v.Dono)

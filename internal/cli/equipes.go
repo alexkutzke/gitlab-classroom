@@ -38,7 +38,7 @@ func cmdEquipes() *cobra.Command {
 
 			achou := false
 			for _, e := range exercicios {
-				vinculos := t.VinculosDoExercicio(e.ID)
+				vinculos := t.VinculosEmOrdem(e.ID)
 				if len(vinculos) == 0 {
 					continue
 				}
@@ -62,7 +62,7 @@ func cmdEquipes() *cobra.Command {
 		},
 	}
 	c.Flags().StringArrayVar(&ids, "exercicio", nil, "exercício a listar (repetível; padrão: todos os ativos)")
-	c.AddCommand(cmdEquipesVincular(), cmdEquipesDesvincular())
+	c.AddCommand(cmdEquipesVincular(), cmdEquipesDesvincular(), cmdEquipesDesconhecidos())
 	return c
 }
 
@@ -159,5 +159,81 @@ func cmdEquipesDesvincular() *cobra.Command {
 	c.Flags().StringVar(&grr, "grr", "", "aluno a desvincular")
 	c.MarkFlagRequired("exercicio")
 	c.MarkFlagRequired("grr")
+	return c
+}
+
+func cmdEquipesDesconhecidos() *cobra.Command {
+	var ids []string
+
+	c := &cobra.Command{
+		Use:   "desconhecidos",
+		Short: "Lista membros de fork que não batem com nenhum aluno do cadastro",
+		Long: "A entrega em dupla é descoberta pela lista de membros do fork, e o\n" +
+			"membro é ligado ao aluno pelo login. O aluno que não conseguiu criar a\n" +
+			"conta com o GRR e usou outro login não é reconhecido, e aparece no\n" +
+			"relatório como quem não entregou.\n\n" +
+			"Este comando varre os forks da turma e mostra os logins sem dono, com o\n" +
+			"palpite de quem pode ser. Nada é gravado: para adotar o palpite, use\n" +
+			"`classroom alunos editar --grr ... --usuario ...` e colete de novo.",
+		Example: "  classroom equipes desconhecidos\n" +
+			"  classroom equipes desconhecidos --exercicio html",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, t, err := abrir()
+			if err != nil {
+				return err
+			}
+			exercicios, err := acoes.EscolherExercicios(t, ids)
+			if err != nil {
+				return err
+			}
+			cli, err := cliente(t.Config)
+			if err != nil {
+				return err
+			}
+
+			achados, err := acoes.MembrosDesconhecidos(cmd.Context(), t, cli, exercicios, progressoTerminal())
+			if err != nil {
+				return err
+			}
+			limparProgresso()
+
+			if len(achados) == 0 {
+				fmt.Println("Todo membro de fork da turma corresponde a um aluno do cadastro.")
+				return nil
+			}
+
+			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(tw, "EXERCÍCIO\tLOGIN\tNOME NO GITLAB\tNO FORK DE\tPALPITE")
+			for _, m := range achados {
+				palpite, dono := "-", m.DonoNome
+				if m.TemSugestao {
+					palpite = m.Sugestao.GRR + "  " + m.Sugestao.Nome
+					if m.Sugestao.GRR == m.DonoGRR {
+						// Segunda conta do próprio dono do fork, e não dupla.
+						dono = "o próprio"
+					}
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+					m.Exercicio, m.Usuario, m.Nome, dono, palpite)
+			}
+			tw.Flush()
+
+			fmt.Println()
+			avisar("O palpite vem da semelhança de nome e não é confirmação. Confira antes de cadastrar:")
+			visto := map[string]bool{}
+			for _, m := range achados {
+				chave := m.Sugestao.GRR + " " + m.Usuario
+				if !m.TemSugestao || visto[chave] {
+					continue
+				}
+				visto[chave] = true
+				fmt.Printf("  classroom alunos editar --grr %s --usuario %s\n",
+					m.Sugestao.GRR, m.Usuario)
+			}
+			return nil
+		},
+	}
+	c.Flags().StringArrayVar(&ids, "exercicio", nil, "exercício a varrer (repetível; padrão: todos os ativos)")
 	return c
 }
