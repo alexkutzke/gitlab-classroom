@@ -193,7 +193,7 @@ func (s *Store) gravarAlunos(as []turma.Aluno) error {
 
 // --- exercícios ---
 
-var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "verificacao", "imagem", "situacao"}
+var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "ordem", "verificacao", "imagem", "situacao"}
 
 func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 	t, err := lerTabela(s.caminho(arqExercicios), cabecalhoExercicios, "id")
@@ -210,6 +210,10 @@ func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 		if err != nil {
 			return nil, err
 		}
+		ordem, err := t.decimal(i, "ordem", 0)
+		if err != nil {
+			return nil, err
+		}
 		sit := turma.SituacaoExercicio(t.str(i, "situacao"))
 		if sit == "" {
 			sit = turma.ExercicioAtivo
@@ -220,6 +224,7 @@ func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 			Titulo:      t.str(i, "titulo"),
 			Prazo:       prazo,
 			Peso:        peso,
+			Ordem:       int(ordem),
 			Verificacao: t.str(i, "verificacao"),
 			Imagem:      t.str(i, "imagem"),
 			Situacao:    sit,
@@ -237,7 +242,7 @@ func (s *Store) gravarExercicios(es []turma.Exercicio) error {
 	for _, e := range es {
 		linhas = append(linhas, []string{
 			e.ID, e.Repo, e.Titulo, e.Prazo.String(), formatarDecimal(e.Peso),
-			e.Verificacao, e.Imagem, string(e.Situacao),
+			formatarOrdem(e.Ordem), e.Verificacao, e.Imagem, string(e.Situacao),
 		})
 	}
 	return gravarCSV(s.caminho(arqExercicios), linhas)

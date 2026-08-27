@@ -148,3 +148,12 @@ func normalizarColuna(s string) string {
 func formatarDecimal(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
+
+// formatarOrdem grava em branco quando não definida, para o CSV não encher
+// de zeros em turmas que nunca precisaram desempatar exercícios.
+func formatarOrdem(v int) string {
+	if v == 0 {
+		return ""
+	}
+	return strconv.Itoa(v)
+}

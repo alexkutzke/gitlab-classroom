@@ -24,7 +24,7 @@ func turmaExemplo() *turma.Turma {
 		}},
 		Exercicios: []turma.Exercicio{{
 			ID: "html", Repo: "ds122-html-assignment", Titulo: "HTML",
-			Prazo: turma.NovaData(2026, time.September, 5), Peso: 1.5,
+			Prazo: turma.NovaData(2026, time.September, 5), Peso: 1.5, Ordem: 2,
 			Situacao: turma.ExercicioAtivo,
 		}},
 		Entregas: []turma.Entrega{{
@@ -67,6 +67,9 @@ func TestGravarECarregarPreservaTudo(t *testing.T) {
 	if len(lida.Exercicios) != 1 || lida.Exercicios[0].Peso != 1.5 {
 		t.Errorf("exercício não sobreviveu ao ciclo: %+v", lida.Exercicios)
 	}
+	if lida.Exercicios[0].Ordem != 2 {
+		t.Errorf("ordem não sobreviveu ao ciclo: %+v", lida.Exercicios[0])
+	}
 	if len(lida.Entregas) != 1 || lida.Entregas[0].Commits != 4 {
 		t.Errorf("entrega não sobreviveu ao ciclo: %+v", lida.Entregas)
 	}
@@ -81,6 +84,32 @@ func TestGravarECarregarPreservaTudo(t *testing.T) {
 	}
 	if !lida.Entregas[0].DataCommit.Equal(original.Entregas[0].DataCommit) {
 		t.Errorf("data do commit mudou: %v", lida.Entregas[0].DataCommit)
+	}
+}
+
+func TestLerExerciciosSemColunaOrdemUsaZero(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Criar(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conteudo := "id;repo;titulo;prazo;peso;verificacao;imagem;situacao\n" +
+		"html;ds122-html-assignment;HTML;2026-09-05;1;;;ativo\n" +
+		"prepare;ds122-prepare-assignment;;2026-08-15;1;;;ativo\n"
+	if err := os.WriteFile(s.caminho("exercicios.csv"), []byte(conteudo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exs, err := s.lerExercicios()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exs) != 2 {
+		t.Fatalf("esperava 2 exercícios, veio %d", len(exs))
+	}
+	for _, e := range exs {
+		if e.Ordem != 0 {
+			t.Errorf("exercício %s: Ordem = %d, queria 0 (CSV sem a coluna)", e.ID, e.Ordem)
+		}
 	}
 }
 

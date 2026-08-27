@@ -44,6 +44,7 @@ func cmdExercicios() *cobra.Command {
 func cmdExerciciosAdd() *cobra.Command {
 	var id, repo, titulo, prazo, verificacao, imagem string
 	var peso float64
+	var ordem int
 
 	c := &cobra.Command{
 		Use:   "add",
@@ -70,7 +71,7 @@ func cmdExerciciosAdd() *cobra.Command {
 				return fmt.Errorf("já existe exercício com id %q: use `classroom exercicios editar`", id)
 			}
 			e := turma.Exercicio{
-				ID: id, Repo: repo, Titulo: titulo, Prazo: p, Peso: peso,
+				ID: id, Repo: repo, Titulo: titulo, Prazo: p, Peso: peso, Ordem: ordem,
 				Verificacao: verificacao, Imagem: imagem, Situacao: turma.ExercicioAtivo,
 			}
 			if err := e.Validar(); err != nil {
@@ -90,6 +91,7 @@ func cmdExerciciosAdd() *cobra.Command {
 	c.Flags().StringVar(&titulo, "titulo", "", "título exibido nos relatórios")
 	c.Flags().StringVar(&prazo, "prazo", "", "data de entrega, em AAAA-MM-DD")
 	c.Flags().Float64Var(&peso, "peso", 1, "peso do exercício na média")
+	c.Flags().IntVar(&ordem, "ordem", 0, "desempate na tabela quando dois exercícios têm o mesmo prazo")
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada, relativo à raiz do repositório")
 	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
 	c.MarkFlagRequired("repo")
@@ -100,6 +102,7 @@ func cmdExerciciosAdd() *cobra.Command {
 func cmdExerciciosEditar() *cobra.Command {
 	var id, repo, titulo, prazo, verificacao, imagem string
 	var peso float64
+	var ordem int
 
 	c := &cobra.Command{
 		Use:     "editar",
@@ -123,6 +126,9 @@ func cmdExerciciosEditar() *cobra.Command {
 			}
 			if cmd.Flags().Changed("peso") {
 				e.Peso = peso
+			}
+			if cmd.Flags().Changed("ordem") {
+				e.Ordem = ordem
 			}
 			if cmd.Flags().Changed("verificacao") {
 				e.Verificacao = verificacao
@@ -153,6 +159,7 @@ func cmdExerciciosEditar() *cobra.Command {
 	c.Flags().StringVar(&titulo, "titulo", "", "título exibido nos relatórios")
 	c.Flags().StringVar(&prazo, "prazo", "", "data de entrega, em AAAA-MM-DD")
 	c.Flags().Float64Var(&peso, "peso", 1, "peso do exercício na média")
+	c.Flags().IntVar(&ordem, "ordem", 0, "desempate na tabela quando dois exercícios têm o mesmo prazo")
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada")
 	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
 	c.MarkFlagRequired("id")

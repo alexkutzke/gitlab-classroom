@@ -120,6 +120,17 @@ também o nome do fork do aluno. O apelido curto sai do nome do repositório
 Exercício que saiu do cronograma vai para `classroom exercicios arquivar --id X`,
 o que o tira das coletas sem apagar o que já foi coletado.
 
+Na tabela do `relatorio`, as colunas seguem a ordem do prazo. Dois exercícios
+com o mesmo prazo empatam pelo `--ordem` de cada um, e só na ausência dos dois
+o desempate cai no `--id`:
+
+```bash
+classroom exercicios editar --id prepare --ordem 1
+classroom exercicios editar --id html --ordem 2
+```
+
+Sem `--ordem` definido, nada muda: é o mesmo desempate por `--id` de sempre.
+
 ### Reconciliar as contas
 
 ```bash
@@ -382,7 +393,7 @@ ds122_n/
 └── .classroom/
     ├── config.toml          # turma, turno, padrão do grupo, namespace dos modelos
     ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao;situacao_conta;...
-    ├── exercicios.csv       # id;repo;titulo;prazo;peso;verificacao;situacao
+    ├── exercicios.csv       # id;repo;titulo;prazo;peso;ordem;verificacao;imagem;situacao
     ├── entregas.csv         # o que o GitLab diz
     ├── notas.csv            # o que o professor decidiu
     ├── verificacoes.csv     # o que a suíte automatizada apurou

@@ -65,6 +65,66 @@ func TestSubstituirEntregasPreservaOsOutrosExercicios(t *testing.T) {
 	}
 }
 
+func TestOrdenarExerciciosDesempataPorOrdemDepoisPorID(t *testing.T) {
+	prazo := NovaData(2026, time.September, 5)
+	casos := []struct {
+		nome string
+		es   []Exercicio
+		quer []string
+	}{
+		{
+			nome: "sem ordem definida, cai no ID, como antes",
+			es: []Exercicio{
+				{ID: "prepare", Prazo: prazo},
+				{ID: "html", Prazo: prazo},
+			},
+			quer: []string{"html", "prepare"},
+		},
+		{
+			nome: "ordem definida decide o empate",
+			es: []Exercicio{
+				{ID: "html", Prazo: prazo, Ordem: 2},
+				{ID: "prepare", Prazo: prazo, Ordem: 1},
+			},
+			quer: []string{"prepare", "html"},
+		},
+		{
+			nome: "exercício com ordem vem antes do sem ordem",
+			es: []Exercicio{
+				{ID: "html", Prazo: prazo},
+				{ID: "prepare", Prazo: prazo, Ordem: 1},
+			},
+			quer: []string{"prepare", "html"},
+		},
+		{
+			nome: "prazos diferentes ignoram a ordem",
+			es: []Exercicio{
+				{ID: "depois", Prazo: NovaData(2026, time.September, 6), Ordem: 1},
+				{ID: "antes", Prazo: prazo, Ordem: 2},
+			},
+			quer: []string{"antes", "depois"},
+		},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			ordenarExercicios(c.es)
+			var got []string
+			for _, e := range c.es {
+				got = append(got, e.ID)
+			}
+			if len(got) != len(c.quer) {
+				t.Fatalf("ordenarExercicios = %v, queria %v", got, c.quer)
+			}
+			for i := range got {
+				if got[i] != c.quer[i] {
+					t.Errorf("ordenarExercicios = %v, queria %v", got, c.quer)
+					break
+				}
+			}
+		})
+	}
+}
+
 func TestExercicioValidar(t *testing.T) {
 	casos := []struct {
 		nome string

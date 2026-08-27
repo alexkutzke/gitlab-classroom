@@ -90,6 +90,9 @@ type Exercicio struct {
 	Titulo string
 	Prazo  Data
 	Peso   float64
+	// Ordem desempata exercícios com o mesmo prazo na tabela de entregas.
+	// Zero significa "sem ordem definida", e cai no desempate por ID.
+	Ordem int
 	// Verificacao é o comando da suíte automatizada, relativo à raiz do
 	// repositório. Vazio quando o exercício só é corrigido à mão, que é o
 	// caso da maioria: nem todo enunciado é testável.
@@ -736,10 +739,22 @@ func ordenarAlunos(as []Aluno) {
 	})
 }
 
+// ordenarExercicios ordena por prazo e, no empate, pela ordem que o professor
+// definiu. Ordem zero significa "não definida": fica depois de quem tem
+// ordem e, entre dois exercícios sem ordem, o desempate final é o ID.
 func ordenarExercicios(es []Exercicio) {
 	sort.SliceStable(es, func(i, j int) bool {
 		if !es[i].Prazo.Equal(es[j].Prazo.Time) {
 			return es[i].Prazo.Antes(es[j].Prazo)
+		}
+		if es[i].Ordem != es[j].Ordem {
+			if es[i].Ordem == 0 {
+				return false
+			}
+			if es[j].Ordem == 0 {
+				return true
+			}
+			return es[i].Ordem < es[j].Ordem
 		}
 		return es[i].ID < es[j].ID
 	})
