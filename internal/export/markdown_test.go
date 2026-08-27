@@ -28,6 +28,58 @@ func turmaExemplo() *turma.Turma {
 	}
 }
 
+func TestCelula(t *testing.T) {
+	casos := []struct {
+		nome   string
+		e      turma.Entrega
+		existe bool
+		quer   string
+	}{
+		{"sem coleta", turma.Entrega{}, false, "-"},
+		{"entregue", turma.Entrega{Situacao: turma.Entregue}, true, "ok"},
+		{"entregue com atraso", turma.Entrega{Situacao: turma.Entregue, AtrasoDias: 1}, true, "ok (mexeu +1d)"},
+		{"fora do prazo", turma.Entrega{Situacao: turma.SemCommitNoPrazo, AtrasoDias: 3}, true, "fora do prazo (+3d)"},
+		{"sem commit, nada mesmo", turma.Entrega{Situacao: turma.ForkSemCommit}, true, "sem commit"},
+		{"sem commit, fork vazio", turma.Entrega{Situacao: turma.ForkSemCommit, Detalhe: "repositório vazio"}, true, "sem commit (fork vazio)"},
+		{"sem commit, ramo errado", turma.Entrega{Situacao: turma.ForkSemCommit, Detalhe: "2 commit(s) fora do ramo main"}, true, "sem commit (ramo errado)"},
+		{"entregue em dupla", turma.Entrega{Situacao: turma.Entregue, Detalhe: "entrega compartilhada, fork de Ana Souza"}, true, "ok (dupla)"},
+		{"atrasado em dupla", turma.Entrega{Situacao: turma.Entregue, AtrasoDias: 1, Detalhe: "entrega compartilhada, fork de Ana Souza"}, true, "ok (mexeu +1d) (dupla)"},
+		{"sem commit em dupla", turma.Entrega{Situacao: turma.ForkSemCommit, Detalhe: "entrega compartilhada, fork de Ana Souza"}, true, "sem commit (dupla)"},
+		{"sem fork", turma.Entrega{Situacao: turma.SemFork}, true, "sem fork"},
+		{"sem conta", turma.Entrega{Situacao: turma.SemConta}, true, "sem conta"},
+		{"sem acesso", turma.Entrega{Situacao: turma.SemAcesso}, true, "sem acesso"},
+		{"sem grupo", turma.Entrega{Situacao: turma.GrupoInvisivel}, true, "sem grupo"},
+		{"erro", turma.Entrega{Situacao: turma.Erro}, true, "erro"},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			if got := celula(c.e, c.existe); got != c.quer {
+				t.Errorf("celula = %q, queria %q", got, c.quer)
+			}
+		})
+	}
+}
+
+func TestMarkdownDuplaNaoNomeiaOColegaNaTabelaPublica(t *testing.T) {
+	tur := turmaExemplo()
+	tur.Entregas = []turma.Entrega{
+		{Exercicio: "html", GRR: "GRR20259001", Situacao: turma.Entregue},
+		{Exercicio: "html", GRR: "GRR20259002", Situacao: turma.Entregue,
+			Detalhe: "entrega compartilhada, fork de Ana Souza"},
+	}
+	var buf bytes.Buffer
+	if err := Markdown(&buf, tur, Opcoes{Identificacao: PorGRR}); err != nil {
+		t.Fatal(err)
+	}
+	saida := buf.String()
+	if !strings.Contains(saida, "| GRR20259002 | ok (dupla) |") {
+		t.Errorf("marcador de dupla ausente:\n%s", saida)
+	}
+	if strings.Contains(saida, "Ana Souza") {
+		t.Errorf("nome do colega vazou para a tabela publicada por GRR:\n%s", saida)
+	}
+}
+
 func TestMarkdown(t *testing.T) {
 	var buf bytes.Buffer
 	momento := time.Date(2026, 8, 19, 21, 30, 0, 0, time.Local)

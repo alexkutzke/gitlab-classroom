@@ -30,21 +30,37 @@ type Opcoes struct {
 	Momento time.Time
 }
 
-// celulas traduz a situação da entrega para o texto da tabela.
+// celulas traduz a situação da entrega para o texto da tabela, usando
+// Detalhe para distinguir casos que a situação sozinha esconde: fork vazio
+// de fork com commit no ramo errado, e entrega achada no fork do colega.
 func celula(e turma.Entrega, existe bool) string {
 	if !existe || e.Situacao == "" {
 		return "-"
 	}
+	dupla := strings.HasPrefix(e.Detalhe, "entrega compartilhada")
+	sufixo := ""
+	if dupla {
+		sufixo = " (dupla)"
+	}
 	switch e.Situacao {
 	case turma.Entregue:
 		if e.TemAtraso() {
-			return fmt.Sprintf("ok (mexeu +%dd)", e.AtrasoDias)
+			return fmt.Sprintf("ok (mexeu +%dd)%s", e.AtrasoDias, sufixo)
 		}
-		return "ok"
+		return "ok" + sufixo
 	case turma.SemCommitNoPrazo:
-		return fmt.Sprintf("fora do prazo (+%dd)", e.AtrasoDias)
+		return fmt.Sprintf("fora do prazo (+%dd)%s", e.AtrasoDias, sufixo)
 	case turma.ForkSemCommit:
-		return "sem commit"
+		switch {
+		case dupla:
+			return "sem commit (dupla)"
+		case e.Detalhe == "repositório vazio":
+			return "sem commit (fork vazio)"
+		case strings.Contains(e.Detalhe, "fora do ramo"):
+			return "sem commit (ramo errado)"
+		default:
+			return "sem commit"
+		}
 	case turma.SemFork:
 		return "sem fork"
 	case turma.SemConta:
@@ -117,13 +133,17 @@ func Markdown(w io.Writer, t *turma.Turma, o Opcoes) error {
 
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Legenda: `ok` entregue no prazo; `fora do prazo` só há commits depois da data;")
-	fmt.Fprintln(w, "`sem commit` fork criado sem trabalho do aluno; `sem fork` a tarefa não foi bifurcada;")
-	fmt.Fprintln(w, "`sem grupo` o grupo não foi criado ou o professor não foi adicionado como reporter.")
+	fmt.Fprintln(w, "`sem commit` fork criado sem trabalho do aluno (`fork vazio` nunca teve um")
+	fmt.Fprintln(w, "commit, `ramo errado` tem commits fora do ramo padrão); `sem fork` a tarefa não")
+	fmt.Fprintln(w, "foi bifurcada; `sem acesso` o grupo existe, mas o professor não foi adicionado")
+	fmt.Fprintln(w, "como reporter; `sem grupo` o grupo não foi criado, ou foi criado privado sem")
+	fmt.Fprintln(w, "compartilhar. O sufixo `(dupla)` marca entrega achada no fork do colega.")
 
 	if o.Identificacao == PorGRR {
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "Se a sua linha mostra `sem grupo`, confira em **Settings > General** se o\n"+
-			"grupo se chama `%s` e se `alexkutzke` consta em **Members** como `reporter`.\n",
+		fmt.Fprintf(w, "Se a sua linha mostra `sem grupo` ou `sem acesso`, confira em **Settings >\n"+
+			"General** se o grupo se chama `%s`, se está compartilhado (não privado sem\n"+
+			"convite) e se `alexkutzke` consta em **Members** como `reporter`.\n",
 			t.Config.CaminhoGrupo("grrXXXXXXXX"))
 	}
 	return nil
