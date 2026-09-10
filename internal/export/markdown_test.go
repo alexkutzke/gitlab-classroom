@@ -152,3 +152,31 @@ func TestMarkdownSemColeta(t *testing.T) {
 		t.Errorf("sem coleta a célula deveria ficar vazia:\n%s", buf.String())
 	}
 }
+
+func TestTituloSegueACategoriaPublicada(t *testing.T) {
+	var buf bytes.Buffer
+	tm := turmaComTrabalho()
+	o := Opcoes{Exercicios: tm.ExerciciosDaCategoria("trabalho"), Momento: time.Now()}
+	if err := Markdown(&buf, tm, o); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(buf.String(), "# Entrega do trabalho,") {
+		t.Errorf("título inesperado:\n%s", primeiraLinha(buf.String()))
+	}
+
+	buf.Reset()
+	if err := Markdown(&buf, tm, Opcoes{Momento: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	// Com as duas categorias na mesma tabela, o título geral continua valendo.
+	if !strings.HasPrefix(buf.String(), "# Entrega dos exercícios,") {
+		t.Errorf("título inesperado:\n%s", primeiraLinha(buf.String()))
+	}
+}
+
+func primeiraLinha(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}

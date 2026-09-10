@@ -79,7 +79,7 @@ func cmdAbrir() *cobra.Command {
 			}
 			e, ok := t.Exercicio(id)
 			if !ok {
-				return fmt.Errorf("exercício %q não encontrado", id)
+				return acoes.ErroExercicio(t, id)
 			}
 			a, ok := t.AlunoPorGRR(grr)
 			if !ok {

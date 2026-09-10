@@ -47,14 +47,14 @@ func Alunos(w io.Writer, alunos []turma.Aluno) {
 // Exercicios lista os exercícios cadastrados.
 func Exercicios(w io.Writer, es []turma.Exercicio) {
 	tw := nova(w)
-	fmt.Fprintln(tw, "ID\tREPOSITÓRIO\tPRAZO\tPESO\tVERIFICAÇÃO\tSITUAÇÃO\tTÍTULO")
+	fmt.Fprintln(tw, "ID\tREPOSITÓRIO\tPRAZO\tPESO\tCATEGORIA\tVERIFICAÇÃO\tSITUAÇÃO\tTÍTULO")
 	for _, e := range es {
 		verif := e.Verificacao
 		if verif == "" {
 			verif = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%g\t%s\t%s\t%s\n",
-			e.ID, e.Repo, e.Prazo.String(), e.Peso, verif, e.Situacao, e.Titulo)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%g\t%s\t%s\t%s\t%s\n",
+			e.ID, e.Repo, e.Prazo.String(), e.Peso, e.CategoriaDe(), verif, e.Situacao, e.Titulo)
 	}
 	tw.Flush()
 }
@@ -177,7 +177,24 @@ func Status(w io.Writer, t *turma.Turma) {
 	}
 
 	hoje := turma.Hoje()
-	for _, e := range t.ExerciciosAtivos() {
+	exs := t.ExerciciosAtivos()
+	// Com trabalho cadastrado, a saída sai agrupada por categoria. Os prazos
+	// das partes se intercalam com os dos exercícios em sala, e a lista em
+	// ordem de prazo misturaria as duas avaliações.
+	categorias := turma.CategoriasAtivas(exs)
+	for _, c := range categorias {
+		if len(categorias) > 1 {
+			fmt.Fprintf(w, "[%s]\n", c)
+		}
+		statusDaCategoria(w, t, exs, c, hoje)
+	}
+}
+
+func statusDaCategoria(w io.Writer, t *turma.Turma, exs []turma.Exercicio, categoria string, hoje turma.Data) {
+	for _, e := range exs {
+		if e.CategoriaDe() != categoria {
+			continue
+		}
 		entregas := t.EntregasDoExercicio(e.ID)
 		prazo := e.Prazo.String()
 		if e.Prazo.Depois(hoje) {

@@ -72,6 +72,15 @@ func (a Aluno) UsuarioEsperado() string {
 	return UsuarioGitLab(a.GRR)
 }
 
+// CategoriaExercicio é a categoria dos exercícios em sala, que é o caso
+// comum e o valor assumido quando a coluna vem vazia.
+//
+// A categoria agrupa os exercícios que viram uma avaliação só no diario. O
+// trabalho prático é entregue em partes, cada uma com prazo, peso e critérios
+// próprios, e a nota que vai para o diario é a média das partes, separada da
+// dos exercícios.
+const CategoriaExercicio = "exercicio"
+
 // SituacaoExercicio distingue o exercício em uso do que já saiu do ar.
 type SituacaoExercicio string
 
@@ -99,8 +108,20 @@ type Exercicio struct {
 	Verificacao string
 	// Imagem é o contêiner onde a suíte roda. Vazio usa a imagem padrão da
 	// configuração.
-	Imagem   string
-	Situacao SituacaoExercicio
+	Imagem string
+	// Categoria agrupa os exercícios que consolidam em uma avaliação só do
+	// diario. Vazia vale CategoriaExercicio.
+	Categoria string
+	Situacao  SituacaoExercicio
+}
+
+// CategoriaDe devolve a categoria do exercício, ou a padrão quando a coluna
+// está vazia, que é o caso de todo cadastro anterior a este campo.
+func (e Exercicio) CategoriaDe() string {
+	if c := strings.TrimSpace(e.Categoria); c != "" {
+		return c
+	}
+	return CategoriaExercicio
 }
 
 // TemSuite informa se o exercício tem verificação automatizada.
@@ -119,6 +140,11 @@ func (e Exercicio) Validar() error {
 	}
 	if e.Prazo.IsZero() {
 		return fmt.Errorf("exercício %s sem prazo", e.ID)
+	}
+	// A categoria vira nome de coluna na planilha e texto de CSV com
+	// separador ";", então não pode carregar o separador nem espaço.
+	if c := e.CategoriaDe(); strings.ContainsAny(c, "; \t") {
+		return fmt.Errorf("exercício %s: categoria %q não pode ter espaço nem ponto e vírgula", e.ID, c)
 	}
 	return nil
 }
@@ -629,12 +655,69 @@ func (t *Turma) Exercicio(id string) (*Exercicio, bool) {
 			return &t.Exercicios[i], true
 		}
 	}
+	// O nome do repositório só resolve quando aponta um exercício só. O
+	// trabalho é entregue em partes dentro do mesmo repositório, e devolver
+	// qualquer uma delas corrigiria a parte errada em silêncio.
+	achado := -1
 	for i := range t.Exercicios {
 		if strings.ToLower(t.Exercicios[i].Repo) == id {
-			return &t.Exercicios[i], true
+			if achado >= 0 {
+				return nil, false
+			}
+			achado = i
 		}
 	}
+	if achado >= 0 {
+		return &t.Exercicios[achado], true
+	}
 	return nil, false
+}
+
+// ExerciciosDoRepo devolve os exercícios entregues no repositório informado,
+// em ordem. Serve para dizer quais são as partes quando o nome do repositório
+// não identifica uma delas sozinho.
+func (t *Turma) ExerciciosDoRepo(repo string) []Exercicio {
+	repo = strings.ToLower(strings.TrimSpace(repo))
+	var out []Exercicio
+	for _, e := range t.Exercicios {
+		if strings.ToLower(e.Repo) == repo {
+			out = append(out, e)
+		}
+	}
+	ordenarExercicios(out)
+	return out
+}
+
+// ExerciciosDaCategoria devolve os exercícios ativos de uma categoria, em
+// ordem de prazo. Categoria vazia devolve todos os ativos.
+func (t *Turma) ExerciciosDaCategoria(categoria string) []Exercicio {
+	categoria = strings.TrimSpace(categoria)
+	if categoria == "" {
+		return t.ExerciciosAtivos()
+	}
+	var out []Exercicio
+	for _, e := range t.ExerciciosAtivos() {
+		if strings.EqualFold(e.CategoriaDe(), categoria) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// CategoriasAtivas lista as categorias em uso, na ordem em que o primeiro
+// exercício de cada uma vence. A ordem por prazo, e não alfabética, mantém os
+// exercícios em sala na frente do trabalho nas tabelas e telas.
+func CategoriasAtivas(es []Exercicio) []string {
+	var out []string
+	visto := map[string]bool{}
+	for _, e := range es {
+		c := e.CategoriaDe()
+		if !visto[c] {
+			visto[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // ExerciciosAtivos devolve os exercícios em uso, em ordem de prazo.

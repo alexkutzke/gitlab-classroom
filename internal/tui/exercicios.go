@@ -46,6 +46,7 @@ const (
 	campoPeso
 	campoVerificacao
 	campoImagem
+	campoCategoria
 	campoRepo
 	campoID
 )
@@ -62,6 +63,8 @@ func (c campoExercicio) String() string {
 		return "comando da suíte"
 	case campoImagem:
 		return "imagem do contêiner"
+	case campoCategoria:
+		return "categoria (exercicio, trabalho)"
 	case campoRepo:
 		return "repositório-modelo"
 	case campoID:
@@ -131,6 +134,10 @@ func (tx *telaExercicios) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 		tx.editar(a, campoVerificacao)
 	case "I":
 		tx.editar(a, campoImagem)
+	case "K":
+		// A categoria não fica em "C": essa tecla coleta todos os exercícios
+		// em qualquer tela, e a lista de exercícios não pode ser a exceção.
+		tx.editar(a, campoCategoria)
 	case "n":
 		tx.novo = &turma.Exercicio{Peso: 1, Situacao: turma.ExercicioAtivo}
 		tx.campo, tx.buffer = campoRepo, ""
@@ -169,6 +176,8 @@ func (tx *telaExercicios) editar(a *App, campo campoExercicio) {
 		tx.buffer = e.Verificacao
 	case campoImagem:
 		tx.buffer = e.Imagem
+	case campoCategoria:
+		tx.buffer = e.CategoriaDe()
 	}
 }
 
@@ -229,6 +238,14 @@ func (tx *telaExercicios) aplicar(a *App) {
 		e.Verificacao = valor
 	case campoImagem:
 		e.Imagem = valor
+	case campoCategoria:
+		anterior := e.Categoria
+		e.Categoria = valor
+		if err := e.Validar(); err != nil {
+			e.Categoria = anterior
+			a.erro = err.Error()
+			return
+		}
 	}
 
 	tx.campo, tx.buffer = campoNenhum, ""
@@ -301,7 +318,7 @@ func (tx *telaExercicios) alternarArquivo(a *App, e turma.Exercicio) {
 }
 
 func (tx *telaExercicios) atalhos() string {
-	return "n novo · T título · D prazo · P peso · V suíte · I imagem · A arquiva · z mostra arquivados"
+	return "n novo · T título · D prazo · P peso · V suíte · I imagem · K categoria · A arquiva · z mostra arquivados"
 }
 
 func (tx *telaExercicios) desenhar(a *App) string {
@@ -318,7 +335,7 @@ func (tx *telaExercicios) desenhar(a *App) string {
 		return b.String()
 	}
 
-	b.WriteString(estFraco.Render("  ID          PRAZO       PESO  SUÍTE                     TÍTULO") + "\n")
+	b.WriteString(estFraco.Render("  ID          PRAZO       PESO  CATEGORIA   SUÍTE                     TÍTULO") + "\n")
 
 	altura := a.linhasDisponiveis() - 3
 	if tx.cursor >= len(lista) {
@@ -344,8 +361,8 @@ func (tx *telaExercicios) desenhar(a *App) string {
 			situacao = estFraco.Render(" (arquivado)")
 		}
 		b.WriteString(cursor + preencher(id, 12) + preencher(e.Prazo.String(), 12) +
-			preencher(fmt.Sprintf("%g", e.Peso), 6) + preencher(suite, 26) +
-			truncar(e.Titulo, 30) + situacao + "\n")
+			preencher(fmt.Sprintf("%g", e.Peso), 6) + preencher(truncar(e.CategoriaDe(), 10), 12) +
+			preencher(suite, 26) + truncar(e.Titulo, 30) + situacao + "\n")
 	}
 	if len(lista) > altura {
 		b.WriteString(rolagem(tx.topo, fim, len(lista)) + "\n")

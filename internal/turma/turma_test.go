@@ -1,6 +1,7 @@
 package turma
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -324,5 +325,83 @@ func TestRemoverVinculo(t *testing.T) {
 	}
 	if got := tur.Dono("html", "GRR2"); got != "GRR2" {
 		t.Errorf("depois de desvinculado, o dono é ele mesmo, veio %q", got)
+	}
+}
+
+func TestCategoriaVaziaValeAPadrao(t *testing.T) {
+	if got := (Exercicio{ID: "html"}).CategoriaDe(); got != CategoriaExercicio {
+		t.Errorf("CategoriaDe = %q, queria %q", got, CategoriaExercicio)
+	}
+	if got := (Exercicio{ID: "t1", Categoria: "trabalho"}).CategoriaDe(); got != "trabalho" {
+		t.Errorf("CategoriaDe = %q, queria trabalho", got)
+	}
+}
+
+func TestCategoriaComSeparadorNaoValida(t *testing.T) {
+	e := Exercicio{ID: "t1", Repo: "ds122-trabalho", Prazo: NovaData(2026, 9, 30), Categoria: "trabalho;final"}
+	if err := e.Validar(); err == nil {
+		t.Error("categoria com ponto e vírgula deveria ser recusada: ela vai para CSV com esse separador")
+	}
+}
+
+// As três partes do trabalho são entregues no mesmo repositório, e é isso que
+// separa a média delas da dos exercícios em sala.
+func trabalhoEmPartes() *Turma {
+	return &Turma{Exercicios: []Exercicio{
+		{ID: "prepare", Repo: "ds122-prepare", Prazo: NovaData(2026, time.August, 15), Peso: 1},
+		{ID: "html", Repo: "ds122-html", Prazo: NovaData(2026, time.September, 5), Peso: 1},
+		{ID: "trabalho1", Repo: "ds122-trabalho", Prazo: NovaData(2026, time.September, 30),
+			Peso: 30, Categoria: "trabalho"},
+		{ID: "trabalho2", Repo: "ds122-trabalho", Prazo: NovaData(2026, time.October, 28),
+			Peso: 30, Categoria: "trabalho"},
+		{ID: "trabalho3", Repo: "ds122-trabalho", Prazo: NovaData(2026, time.November, 25),
+			Peso: 40, Categoria: "trabalho"},
+	}}
+}
+
+func TestExerciciosDaCategoria(t *testing.T) {
+	tur := trabalhoEmPartes()
+	casos := []struct {
+		categoria string
+		quer      []string
+	}{
+		{"trabalho", []string{"trabalho1", "trabalho2", "trabalho3"}},
+		{"exercicio", []string{"prepare", "html"}},
+		{"", []string{"prepare", "html", "trabalho1", "trabalho2", "trabalho3"}},
+		{"inexistente", nil},
+	}
+	for _, c := range casos {
+		t.Run(c.categoria, func(t *testing.T) {
+			var got []string
+			for _, e := range tur.ExerciciosDaCategoria(c.categoria) {
+				got = append(got, e.ID)
+			}
+			if strings.Join(got, ",") != strings.Join(c.quer, ",") {
+				t.Errorf("ExerciciosDaCategoria(%q) = %v, queria %v", c.categoria, got, c.quer)
+			}
+		})
+	}
+}
+
+func TestCategoriasAtivasSaemNaOrdemDoSemestre(t *testing.T) {
+	got := CategoriasAtivas(trabalhoEmPartes().ExerciciosAtivos())
+	if len(got) != 2 || got[0] != CategoriaExercicio || got[1] != "trabalho" {
+		t.Errorf("CategoriasAtivas = %v, queria [exercicio trabalho]", got)
+	}
+}
+
+func TestRepoComVariasPartesNaoResolveSozinho(t *testing.T) {
+	tur := trabalhoEmPartes()
+	if _, ok := tur.Exercicio("ds122-trabalho"); ok {
+		t.Error("o nome do repositório aponta três partes e não pode escolher uma delas")
+	}
+	if e, ok := tur.Exercicio("ds122-html"); !ok || e.ID != "html" {
+		t.Error("repositório de exercício único deveria continuar resolvendo pelo nome")
+	}
+	if e, ok := tur.Exercicio("trabalho2"); !ok || e.ID != "trabalho2" {
+		t.Error("o id da parte precisa resolver")
+	}
+	if partes := tur.ExerciciosDoRepo("ds122-trabalho"); len(partes) != 3 {
+		t.Errorf("ExerciciosDoRepo = %d partes, queria 3", len(partes))
 	}
 }

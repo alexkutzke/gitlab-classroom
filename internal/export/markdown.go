@@ -90,7 +90,13 @@ func Markdown(w io.Writer, t *turma.Turma, o Opcoes) error {
 		o.Identificacao = PorNome
 	}
 
-	fmt.Fprintf(w, "# Entrega dos exercícios, %s\n\n", t.Config.Descricao())
+	// O título segue a categoria das colunas: publicada em separado, a tabela
+	// do trabalho não pode se anunciar como a dos exercícios.
+	assunto := "dos exercícios"
+	if cats := turma.CategoriasAtivas(exs); len(cats) == 1 && cats[0] != turma.CategoriaExercicio {
+		assunto = "do " + cats[0]
+	}
+	fmt.Fprintf(w, "# Entrega %s, %s\n\n", assunto, t.Config.Descricao())
 	fmt.Fprintf(w, "- **Turma**: %s\n", t.Config.Turma)
 	fmt.Fprintf(w, "- **Semestre**: %s\n", t.Config.Semestre)
 	fmt.Fprintf(w, "- **Última atualização**: %s\n\n", o.Momento.Format("02/01/2006 15:04"))

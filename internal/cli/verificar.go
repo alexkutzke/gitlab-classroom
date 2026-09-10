@@ -42,7 +42,7 @@ func cmdVerificar() *cobra.Command {
 			}
 			e, ok := t.Exercicio(id)
 			if !ok {
-				return fmt.Errorf("exercício %q não encontrado", id)
+				return acoes.ErroExercicio(t, id)
 			}
 			if !e.TemSuite() {
 				return fmt.Errorf(

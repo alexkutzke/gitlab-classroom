@@ -14,7 +14,7 @@ import (
 
 func cmdRelatorio() *cobra.Command {
 	var ids []string
-	var saida, identificacao string
+	var saida, identificacao, categoria string
 	var detalhado bool
 
 	c := &cobra.Command{
@@ -27,7 +27,8 @@ func cmdRelatorio() *cobra.Command {
 			"use --identificacao grr.",
 		Example: "  classroom relatorio\n" +
 			"  classroom relatorio -o ../ds122-alexkutzke/src/entregas.md\n" +
-			"  classroom relatorio --exercicio html --identificacao grr",
+			"  classroom relatorio --exercicio html --identificacao grr\n" +
+			"  classroom relatorio --categoria trabalho",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, t, err := abrir()
@@ -38,6 +39,14 @@ func cmdRelatorio() *cobra.Command {
 			if len(ids) > 0 {
 				if exercicios, err = acoes.EscolherExercicios(t, ids); err != nil {
 					return err
+				}
+			}
+			if categoria != "" && len(ids) == 0 {
+				// Publicar a tabela do trabalho em separado é o caso de uso:
+				// as partes têm prazos próprios e vão para outra página do
+				// material.
+				if exercicios = t.ExerciciosDaCategoria(categoria); len(exercicios) == 0 {
+					return fmt.Errorf("nenhum exercício ativo na categoria %q", categoria)
 				}
 			}
 
@@ -67,6 +76,7 @@ func cmdRelatorio() *cobra.Command {
 	c.Flags().StringArrayVar(&ids, "exercicio", nil, "exercício a incluir (repetível; padrão: todos os ativos)")
 	c.Flags().StringVarP(&saida, "saida", "o", "", "arquivo de destino (padrão: saída padrão)")
 	c.Flags().StringVar(&identificacao, "identificacao", "nome", "como identificar o aluno na tabela: nome ou grr")
+	c.Flags().StringVar(&categoria, "categoria", "", "restringir a uma categoria de exercício, como exercicio ou trabalho")
 	c.Flags().BoolVar(&detalhado, "detalhado", false, "reservado")
 	return c
 }

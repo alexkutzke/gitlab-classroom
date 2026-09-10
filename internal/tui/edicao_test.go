@@ -258,3 +258,61 @@ func TestTeclaDesconhecidaNaoQuebra(t *testing.T) {
 		t.Error("a interface deveria continuar desenhando")
 	}
 }
+
+func TestEditarCategoriaPelaTela(t *testing.T) {
+	a := appExemplo(t)
+	teclar(a, "x", "K") // categoria do primeiro exercício
+	// O campo abre com o valor corrente; apagar antes de digitar o novo.
+	for range "exercicio" {
+		teclar(a, "backspace")
+	}
+	for _, r := range "trabalho" {
+		teclar(a, string(r))
+	}
+	teclar(a, "enter")
+
+	e, ok := a.turma.Exercicio("prepare")
+	if !ok {
+		t.Fatal("exercício sumiu")
+	}
+	if e.CategoriaDe() != "trabalho" {
+		t.Errorf("categoria = %q, queria trabalho; erro: %q", e.CategoriaDe(), a.erro)
+	}
+	relida, err := a.store.Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := relida.Exercicio("prepare"); p == nil || p.CategoriaDe() != "trabalho" {
+		t.Error("a categoria não foi gravada no disco")
+	}
+}
+
+func TestCategoriaInvalidaNaoEhAceita(t *testing.T) {
+	a := appExemplo(t)
+	teclar(a, "x", "K")
+	for range "exercicio" {
+		teclar(a, "backspace")
+	}
+	for _, r := range "trabalho;final" {
+		teclar(a, string(r))
+	}
+	teclar(a, "enter")
+
+	if a.erro == "" {
+		t.Error("categoria com o separador do CSV deveria ser recusada com aviso")
+	}
+	e, _ := a.turma.Exercicio("prepare")
+	if e.CategoriaDe() != turma.CategoriaExercicio {
+		t.Errorf("categoria = %q, queria a padrão", e.CategoriaDe())
+	}
+}
+
+// C coleta todos os exercícios em qualquer tela, e a lista de exercícios não
+// pode virar exceção só porque também edita campos.
+func TestCNaTelaDeExerciciosNaoEditaCategoria(t *testing.T) {
+	a := appExemplo(t)
+	teclar(a, "x", "C")
+	if a.catalogo.campo != campoNenhum {
+		t.Errorf("C abriu o campo %v em vez de coletar", a.catalogo.campo)
+	}
+}

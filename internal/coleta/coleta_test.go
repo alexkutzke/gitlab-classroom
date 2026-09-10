@@ -824,3 +824,65 @@ func TestFalhaNaDescobertaDeEquipesNaoDerrubaAColeta(t *testing.T) {
 		t.Errorf("situação de Bruno = %v, queria sem_fork", e.Situacao)
 	}
 }
+
+// As três partes do trabalho são entregues no mesmo repositório, cada uma com
+// seu prazo. A coleta precisa dar um veredito por parte, olhando o commit mais
+// recente até o prazo daquela parte.
+func TestPartesDoMesmoRepositorioTemEntregaPropria(t *testing.T) {
+	c := baseFalsa()
+	grupo := grupoAna
+	c.projetos[grupo] = []gl.Projeto{{
+		ID: 20, Caminho: "ds122-trabalho",
+		Completo:   grupo + "/ds122-trabalho",
+		RamoPadrao: "main",
+		ForkDe:     "ds122-alexkutzke/ds122-trabalho",
+	}}
+	c.commits["ds122-alexkutzke/ds122-trabalho"] = []gl.Commit{
+		{SHA: "modelo1", Data: time.Date(2026, 8, 1, 10, 0, 0, 0, time.Local)},
+	}
+	c.commits[grupo+"/ds122-trabalho"] = []gl.Commit{
+		{SHA: "modelo1", Data: time.Date(2026, 8, 1, 10, 0, 0, 0, time.Local)},
+		{SHA: "parte1", Data: time.Date(2026, 9, 29, 20, 0, 0, 0, time.Local)},
+		{SHA: "parte2", Data: time.Date(2026, 10, 27, 20, 0, 0, 0, time.Local)},
+	}
+
+	parte := func(id string, ano int, mes time.Month, dia int) turma.Exercicio {
+		return turma.Exercicio{
+			ID: id, Repo: "ds122-trabalho", Prazo: turma.NovaData(ano, mes, dia),
+			Peso: 30, Categoria: "trabalho", Situacao: turma.ExercicioAtivo,
+		}
+	}
+	col := &Coletor{Cliente: c, Config: configExemplo()}
+	res, err := col.Coletar(context.Background(), []turma.Aluno{ana()}, []turma.Exercicio{
+		parte("trabalho1", 2026, time.September, 30),
+		parte("trabalho2", 2026, time.October, 28),
+		parte("trabalho3", 2026, time.November, 25),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Entregas) != 3 {
+		t.Fatalf("esperava 3 entregas, veio %d", len(res.Entregas))
+	}
+
+	quer := map[string]struct {
+		situacao turma.SituacaoEntrega
+		commit   string
+	}{
+		"trabalho1": {turma.Entregue, "parte1"},
+		"trabalho2": {turma.Entregue, "parte2"},
+		// A terceira parte ainda não tem commit depois do prazo da segunda, e
+		// o último commit do aluno é o que vale até o prazo dela.
+		"trabalho3": {turma.Entregue, "parte2"},
+	}
+	for _, e := range res.Entregas {
+		q, ok := quer[e.Exercicio]
+		if !ok {
+			t.Fatalf("entrega inesperada em %s", e.Exercicio)
+		}
+		if e.Situacao != q.situacao || e.Commit != q.commit {
+			t.Errorf("%s: situação %s e commit %s, queria %s e %s",
+				e.Exercicio, e.Situacao, e.Commit, q.situacao, q.commit)
+		}
+	}
+}

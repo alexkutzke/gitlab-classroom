@@ -19,7 +19,7 @@ Módulo: `github.com/alexkutzke/gitlab-classroom`.
 
 ## Aplicação de referência
 
-`~/work/dev/diario` é a aplicação irmã (controle de frequência) e define as
+`~/projetos/dev/diario` é a aplicação irmã (controle de frequência) e define as
 convenções desta. Ao implementar qualquer coisa aqui, leia lá o equivalente
 antes. O que se repete:
 
@@ -58,6 +58,13 @@ Consequências que o código precisa respeitar:
   qualquer nome antes de declarar ausência.
 - Trabalhos em grupo têm um *fork* só, com os colegas adicionados como membros
   do projeto. Uma entrega pode corresponder a mais de um aluno.
+- O trabalho prático é entregue em partes dentro de um repositório só, cada
+  parte com prazo, peso e critérios próprios. Cada parte é um `Exercicio` com
+  o mesmo `repo` e `id` distinto, e a coluna `categoria` (`trabalho`) as
+  agrupa. A coleta não muda: `acharProjeto` casa o fork pelo `repo`, e o cache
+  de commits faz as três partes custarem uma requisição. Nome de repositório
+  com mais de uma parte deixa de resolver como apelido, senão a correção iria
+  para a parte errada em silêncio.
 
 ## Estado dos dados
 
@@ -71,7 +78,7 @@ ds122_n/
 └── .classroom/
     ├── config.toml          # turma, turno, padrão do grupo, namespace dos modelos
     ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao
-    ├── exercicios.csv       # id;repo;titulo;prazo;peso;verificacao;situacao
+    ├── exercicios.csv       # id;repo;titulo;prazo;peso;ordem;verificacao;imagem;categoria;situacao
     ├── entregas.csv         # estado coletado do GitLab
     ├── notas.csv            # exercicio;grr;nota;comentario;corrigido_em
     └── verificacoes.csv     # exercicio;grr;situacao;aprovados;total;commit;...
@@ -190,7 +197,30 @@ resolve.
 | `classroom verificar` | roda a suíte do exercício sobre os clones, em contêiner |
 | `classroom corrigir` | interface interativa de correção |
 | `classroom nota` | lança ou apaga uma nota isolada |
-| `classroom notas` | planilha de notas por exercício e média |
+| `classroom notas` | planilha de notas por exercício e média; `--consolidar` gera o CSV que o `diario` importa, e `--categoria` escolhe entre exercícios e trabalho |
+
+## Categorias de exercício
+
+A coluna `categoria` de `exercicios.csv` agrupa os exercícios que viram uma
+avaliação só no `diario`. Vazia vale `exercicio`, que é o cadastro de sempre e
+o que mantém os arquivos anteriores válidos.
+
+O que a categoria decide:
+
+- a planilha ganha uma coluna de média por categoria (`Média (exercicio)`,
+  `Média (trabalho)`), porque média que soma exercício em sala com parte de
+  trabalho não serve para lançar nem para conferir nada;
+- `classroom notas --consolidar` recusa consolidar duas categorias juntas e
+  pede `--categoria`. O engano só apareceria depois da nota lançada no
+  `diario`, nas duas avaliações;
+- `status` e `relatorio --categoria` separam as listas, porque os prazos das
+  partes se intercalam com os dos exercícios em sala.
+
+A observação do CSV consolidado diz "exercícios" na categoria padrão e
+"partes" nas demais, que é como o trabalho é descrito para a turma.
+
+Escala e peso continuam iguais: a média sai em `nota_maxima`, e o peso de cada
+parte é relativo dentro da categoria (30, 30 e 40 no trabalho de 2026/2).
 
 ## Dois requisitos de origem
 
@@ -425,3 +455,10 @@ go build ./...
 go test ./...
 go install ./cmd/classroom
 ```
+
+Repositório git local, branch `master`, sem remote configurado. O histórico só
+existe nesta máquina, então perda do diretório é perda do projeto.
+
+`go install ./cmd/classroom` é o que atualiza o binário usado no terminal.
+Depois de mexer no código, rodar isso, senão o `classroom` chamado de dentro de
+`ds122_n/` ou `ds122_t/` continua sendo o antigo.

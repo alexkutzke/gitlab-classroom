@@ -208,3 +208,60 @@ func TestVinculoSemColunaDeOrigemEhTratadoComoManual(t *testing.T) {
 		t.Errorf("vínculo lido = %+v", lida.Vinculos)
 	}
 }
+
+func TestLerExerciciosSemColunaCategoriaUsaAPadrao(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Criar(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conteudo := "id;repo;titulo;prazo;peso;ordem;verificacao;imagem;situacao\n" +
+		"html;ds122-html-assignment;HTML;2026-09-05;1;;;;ativo\n"
+	if err := os.WriteFile(s.caminho("exercicios.csv"), []byte(conteudo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exs, err := s.lerExercicios()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exs) != 1 {
+		t.Fatalf("esperava 1 exercício, veio %d", len(exs))
+	}
+	if got := exs[0].CategoriaDe(); got != turma.CategoriaExercicio {
+		t.Errorf("categoria = %q, queria %q no CSV anterior à coluna", got, turma.CategoriaExercicio)
+	}
+}
+
+func TestCategoriaSobreviveAGravacao(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Criar(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := &turma.Turma{Exercicios: []turma.Exercicio{
+		{ID: "trabalho1", Repo: "ds122-trabalho", Prazo: turma.NovaData(2026, 9, 30),
+			Peso: 30, Categoria: "trabalho", Situacao: turma.ExercicioAtivo},
+		{ID: "trabalho2", Repo: "ds122-trabalho", Prazo: turma.NovaData(2026, 10, 28),
+			Peso: 30, Categoria: "trabalho", Situacao: turma.ExercicioAtivo},
+	}}
+	if err := s.Gravar(original); err != nil {
+		t.Fatal(err)
+	}
+	lida, err := s.Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lida.Exercicios) != 2 {
+		t.Fatalf("esperava 2 exercícios, veio %d", len(lida.Exercicios))
+	}
+	for _, e := range lida.Exercicios {
+		if e.Categoria != "trabalho" {
+			t.Errorf("%s: categoria = %q, queria trabalho", e.ID, e.Categoria)
+		}
+	}
+	// Duas partes no mesmo repositório precisam continuar distinguíveis pelo
+	// id depois da ida e volta ao arquivo.
+	if e, ok := lida.Exercicio("trabalho2"); !ok || e.Peso != 30 {
+		t.Error("a segunda parte se perdeu na leitura")
+	}
+}

@@ -361,6 +361,7 @@ func (aj *ajuda) desenhar(a *App) string {
 		{"Exercícios (x)", [][2]string{
 			{"n", "cadastra um exercício"},
 			{"T D P V I", "edita título, prazo, peso, suíte e imagem"},
+			{"K", "edita a categoria: exercicio, trabalho"},
 			{"A z", "arquiva, e mostra os arquivados"},
 		}},
 		{"Painel", [][2]string{

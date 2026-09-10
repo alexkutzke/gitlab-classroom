@@ -85,7 +85,7 @@ func cmdEquipesVincular() *cobra.Command {
 			}
 			e, ok := t.Exercicio(id)
 			if !ok {
-				return fmt.Errorf("exercício %q não encontrado", id)
+				return acoes.ErroExercicio(t, id)
 			}
 			integrante, ok := t.AlunoPorGRR(grr)
 			if !ok {
@@ -142,7 +142,7 @@ func cmdEquipesDesvincular() *cobra.Command {
 			}
 			e, ok := t.Exercicio(id)
 			if !ok {
-				return fmt.Errorf("exercício %q não encontrado", id)
+				return acoes.ErroExercicio(t, id)
 			}
 			if !t.RemoverVinculo(e.ID, grr) {
 				return fmt.Errorf("%s não tem vínculo em %s", grr, e.ID)

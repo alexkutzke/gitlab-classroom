@@ -58,11 +58,28 @@ func EscolherExercicios(t *turma.Turma, ids []string) ([]turma.Exercicio, error)
 	for _, id := range ids {
 		e, ok := t.Exercicio(id)
 		if !ok {
-			return nil, fmt.Errorf("exercício %q não encontrado", id)
+			return nil, ErroExercicio(t, id)
 		}
 		out = append(out, *e)
 	}
 	return out, nil
+}
+
+// ErroExercicio explica por que o identificador não resolveu.
+//
+// O nome do repositório costuma servir de apelido, mas o trabalho é entregue
+// em partes dentro de um repositório só. Nesse caso a mensagem lista as
+// partes, em vez de mandar procurar um exercício que existe.
+func ErroExercicio(t *turma.Turma, id string) error {
+	if partes := t.ExerciciosDoRepo(id); len(partes) > 1 {
+		var ids []string
+		for _, p := range partes {
+			ids = append(ids, p.ID)
+		}
+		return fmt.Errorf("%s tem %d partes: informe uma delas (%s)",
+			id, len(partes), strings.Join(ids, ", "))
+	}
+	return fmt.Errorf("exercício %q não encontrado", id)
 }
 
 // --- entregas em dupla ---

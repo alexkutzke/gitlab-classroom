@@ -193,7 +193,10 @@ func (s *Store) gravarAlunos(as []turma.Aluno) error {
 
 // --- exercícios ---
 
-var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "ordem", "verificacao", "imagem", "situacao"}
+// A categoria entra no fim da linha: as colunas são localizadas pelo nome, e
+// o exercicios.csv gravado antes deste campo continua sendo lido, com a
+// categoria vazia valendo a padrão.
+var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "ordem", "verificacao", "imagem", "categoria", "situacao"}
 
 func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 	t, err := lerTabela(s.caminho(arqExercicios), cabecalhoExercicios, "id")
@@ -227,6 +230,7 @@ func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 			Ordem:       int(ordem),
 			Verificacao: t.str(i, "verificacao"),
 			Imagem:      t.str(i, "imagem"),
+			Categoria:   t.str(i, "categoria"),
 			Situacao:    sit,
 		}
 		if err := e.Validar(); err != nil {
@@ -242,7 +246,7 @@ func (s *Store) gravarExercicios(es []turma.Exercicio) error {
 	for _, e := range es {
 		linhas = append(linhas, []string{
 			e.ID, e.Repo, e.Titulo, e.Prazo.String(), formatarDecimal(e.Peso),
-			formatarOrdem(e.Ordem), e.Verificacao, e.Imagem, string(e.Situacao),
+			formatarOrdem(e.Ordem), e.Verificacao, e.Imagem, e.Categoria, string(e.Situacao),
 		})
 	}
 	return gravarCSV(s.caminho(arqExercicios), linhas)

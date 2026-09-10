@@ -63,7 +63,7 @@ entrega, commits, resultado da suíte, marca de entrega em dupla e a nota.
 | `o` `w` | exercício | abre o clone no `$EDITOR`; abre o projeto no GitLab |
 | `V` `X` | exercício | vincula e desvincula entrega em dupla |
 | `s` `/` | exercício | ordem (nome, situação, nota) e filtro |
-| `n` `T` `D` `P` `V` `I` `A` `z` | exercícios | cadastra, edita campos, arquiva, mostra arquivados |
+| `n` `T` `D` `P` `V` `I` `K` `A` `z` | exercícios | cadastra, edita campos e categoria, arquiva, mostra arquivados |
 | `d` `u` | equipes | desfaz o vínculo; procura membro de fork sem cadastro |
 | `E` | painel | exporta o relatório e a planilha de notas |
 
@@ -130,6 +130,35 @@ classroom exercicios editar --id html --ordem 2
 ```
 
 Sem `--ordem` definido, nada muda: é o mesmo desempate por `--id` de sempre.
+
+#### Trabalho prático, entregue em partes
+
+O trabalho é entregue em partes dentro do mesmo repositório, cada uma com seu
+prazo, seu peso e seus critérios. Cadastre uma parte por prazo, com `--id`
+próprio e `--categoria trabalho`:
+
+```bash
+classroom exercicios add --repo ds122-trabalho --id trabalho1 \
+                         --prazo 2026-09-30 --peso 30 --categoria trabalho
+classroom exercicios add --repo ds122-trabalho --id trabalho2 \
+                         --prazo 2026-10-28 --peso 30 --categoria trabalho
+classroom exercicios add --repo ds122-trabalho --id trabalho3 \
+                         --prazo 2026-11-25 --peso 40 --categoria trabalho
+```
+
+A categoria agrupa os exercícios que viram uma avaliação só no `diario`. Sem
+`--categoria`, vale `exercicio`, que é o cadastro de sempre. As partes de uma
+categoria têm média própria na planilha e consolidação própria, separadas das
+dos exercícios em sala.
+
+Como o repositório é o mesmo nas três, o `--id` é obrigatório a partir da
+segunda parte, e o nome do repositório deixa de servir de apelido: `--exercicio
+ds122-trabalho` passa a responder com a lista das partes, em vez de escolher
+uma delas.
+
+Cada parte é coletada, clonada, verificada e corrigida como qualquer
+exercício. A entrega de cada uma é o commit mais recente até o prazo daquela
+parte, e a dupla é descoberta de novo em cada uma.
 
 ### Reconciliar as contas
 
@@ -254,6 +283,44 @@ exercício com prazo em aberto fica de fora até vencer. Com
 `--somente-lancadas`, a média considera apenas o que já foi corrigido, que é a
 leitura útil no meio do semestre. Célula vazia é exercício sem nota lançada,
 que continua sendo diferente de nota zero.
+
+Com trabalho cadastrado, a planilha ganha uma coluna de média por categoria,
+`Média (exercicio)` e `Média (trabalho)`, porque as duas viram avaliações
+diferentes no `diario`. `--categoria trabalho` restringe a saída a uma delas.
+
+#### Nota consolidada para o `diario`
+
+No `diario`, os exercícios em sala são uma avaliação só, porque é assim que o
+plano de ensino dá o peso. O mesmo vale para o trabalho, cujas três partes
+formam uma nota só. `--consolidar` produz o CSV que ele importa:
+
+```bash
+classroom notas --consolidar --categoria exercicio --somente-lancadas \
+                -o exercicios_consolidado.csv
+diario notas exercicios --de exercicios_consolidado.csv --conferir
+diario notas exercicios --de exercicios_consolidado.csv --sim
+
+classroom notas --consolidar --categoria trabalho -o trabalho_consolidado.csv
+diario notas trabalho --de trabalho_consolidado.csv --conferir
+```
+
+Uma linha por aluno ativo, no formato `grr;nota;observacao`, ordenada por GRR
+para o diff entre execuções continuar legível. A `observacao` registra quantos
+exercícios, ou quantas partes, entraram na média e quais.
+
+Com mais de uma categoria cadastrada, `--categoria` é obrigatória na
+consolidação. Somar exercício em sala com parte de trabalho lançaria a nota
+errada nas duas avaliações, e o engano só apareceria depois de lançado.
+
+Aluno sem nenhum exercício considerado fica fora do arquivo, porque média zero
+por falta de exercício vencido não é nota zero. Por isso, não usar `--ausentes
+nao-entregue` na importação: o arquivo já traz a turma ativa inteira, e marcar
+os ausentes como zero apagaria a distinção entre nota ausente e nota zero.
+Aluno que cancelou a matrícula depois de uma consolidação anterior conserva no
+`diario` a nota já lançada, que é tratada lá no fechamento.
+
+A média sai na escala de `nota_maxima` (100 por padrão), então a avaliação
+correspondente no `diario` precisa ter o mesmo `maximo`.
 
 ### Verificação automática
 
@@ -382,6 +449,9 @@ o que o aluno precisa fazer quando a linha dele diz `sem grupo`.
 O arquivo novo em `src/` só aparece no mdBook depois de entrar no
 `src/SUMMARY.md`.
 
+`--categoria trabalho` publica só as partes do trabalho, em página separada da
+dos exercícios.
+
 ## Onde ficam os dados
 
 Um diretório `.classroom/` na pasta da turma, encontrado subindo a árvore de
@@ -393,7 +463,7 @@ ds122_n/
 └── .classroom/
     ├── config.toml          # turma, turno, padrão do grupo, namespace dos modelos
     ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao;situacao_conta;...
-    ├── exercicios.csv       # id;repo;titulo;prazo;peso;ordem;verificacao;imagem;situacao
+    ├── exercicios.csv       # id;repo;titulo;prazo;peso;ordem;verificacao;imagem;categoria;situacao
     ├── entregas.csv         # o que o GitLab diz
     ├── notas.csv            # o que o professor decidiu
     ├── verificacoes.csv     # o que a suíte automatizada apurou

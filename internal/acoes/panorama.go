@@ -13,7 +13,15 @@ type Panorama struct {
 	Ativos          int
 	ContasPendentes []turma.Aluno
 	Exercicios      []ResumoExercicio
+	// Categorias são as categorias de exercício em uso, na ordem do
+	// semestre. Com mais de uma, as telas precisam dizer a que categoria
+	// cada linha pertence, porque as médias são separadas.
+	Categorias []string
 }
+
+// VariasCategorias informa se a turma tem exercício em sala e trabalho ao
+// mesmo tempo.
+func (p Panorama) VariasCategorias() bool { return len(p.Categorias) > 1 }
 
 // ResumoExercicio conta o que já foi apurado em um exercício.
 type ResumoExercicio struct {
@@ -50,6 +58,8 @@ func PanoramaDe(t *turma.Turma, hoje turma.Data) Panorama {
 			p.ContasPendentes = append(p.ContasPendentes, a)
 		}
 	}
+
+	p.Categorias = turma.CategoriasAtivas(t.ExerciciosAtivos())
 
 	for _, e := range t.ExerciciosAtivos() {
 		entregas := t.EntregasDoExercicio(e.ID)

@@ -127,6 +127,9 @@ func (p *painel) linha(a *App, i int) string {
 	}
 
 	extra := ""
+	if a.panorama.VariasCategorias() {
+		extra += estFraco.Render("  " + e.CategoriaDe())
+	}
 	if r.Compartilhadas > 0 {
 		extra += estFraco.Render(fmt.Sprintf("  %d em dupla", r.Compartilhadas))
 	}

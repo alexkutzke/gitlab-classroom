@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
 	"github.com/alexkutzke/gitlab-classroom/internal/relatorio"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
@@ -42,7 +43,7 @@ func cmdExercicios() *cobra.Command {
 }
 
 func cmdExerciciosAdd() *cobra.Command {
-	var id, repo, titulo, prazo, verificacao, imagem string
+	var id, repo, titulo, prazo, verificacao, imagem, categoria string
 	var peso float64
 	var ordem int
 
@@ -51,9 +52,15 @@ func cmdExerciciosAdd() *cobra.Command {
 		Short: "Cadastra um exercício",
 		Long: "O repositório é o nome do projeto-modelo dentro do namespace da\n" +
 			"disciplina, que é também o nome do fork de cada aluno. Sem --id, o\n" +
-			"apelido curto é derivado do nome do repositório.",
+			"apelido curto é derivado do nome do repositório.\n\n" +
+			"A categoria agrupa os exercícios que viram uma avaliação só no diario.\n" +
+			"Sem --categoria, vale \"exercicio\". O trabalho prático é entregue em\n" +
+			"partes dentro do mesmo repositório: cadastre uma parte por prazo, com\n" +
+			"--id próprio e --categoria trabalho, e a nota consolidada delas sai\n" +
+			"separada da dos exercícios.",
 		Example: "  classroom exercicios add --repo ds122-html-assignment --prazo 2026-09-05\n" +
-			"  classroom exercicios add --repo ds122-prepare-assignment --prazo 2026-08-15 --id prepare",
+			"  classroom exercicios add --repo ds122-prepare-assignment --prazo 2026-08-15 --id prepare\n" +
+			"  classroom exercicios add --repo ds122-trabalho --id trabalho1 --prazo 2026-09-30 --peso 30 --categoria trabalho",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, t, err := abrir()
@@ -68,11 +75,19 @@ func cmdExerciciosAdd() *cobra.Command {
 				id = idDoRepo(repo, t.Config.Codigo)
 			}
 			if _, existe := t.Exercicio(id); existe {
+				if !cmd.Flags().Changed("id") {
+					// Cada parte do trabalho sai do mesmo repositório, e o id
+					// derivado colide na segunda. Dizer isso aqui poupa
+					// descobrir pelo comando de edição.
+					return fmt.Errorf("o id %q, derivado de %s, já está em uso: informe --id, como em --id %s2",
+						id, repo, id)
+				}
 				return fmt.Errorf("já existe exercício com id %q: use `classroom exercicios editar`", id)
 			}
 			e := turma.Exercicio{
 				ID: id, Repo: repo, Titulo: titulo, Prazo: p, Peso: peso, Ordem: ordem,
-				Verificacao: verificacao, Imagem: imagem, Situacao: turma.ExercicioAtivo,
+				Verificacao: verificacao, Imagem: imagem, Categoria: categoria,
+				Situacao: turma.ExercicioAtivo,
 			}
 			if err := e.Validar(); err != nil {
 				return err
@@ -81,8 +96,8 @@ func cmdExerciciosAdd() *cobra.Command {
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
-			fmt.Printf("Exercício %s cadastrado: %s, prazo %s.\n",
-				e.ID, t.Config.CaminhoModelo(e.Repo), e.Prazo.String())
+			fmt.Printf("Exercício %s cadastrado: %s, prazo %s, categoria %s.\n",
+				e.ID, t.Config.CaminhoModelo(e.Repo), e.Prazo.String(), e.CategoriaDe())
 			return nil
 		},
 	}
@@ -94,13 +109,14 @@ func cmdExerciciosAdd() *cobra.Command {
 	c.Flags().IntVar(&ordem, "ordem", 0, "desempate na tabela quando dois exercícios têm o mesmo prazo")
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada, relativo à raiz do repositório")
 	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
+	c.Flags().StringVar(&categoria, "categoria", "", "grupo que consolida em uma avaliação do diario (padrão: exercicio)")
 	c.MarkFlagRequired("repo")
 	c.MarkFlagRequired("prazo")
 	return c
 }
 
 func cmdExerciciosEditar() *cobra.Command {
-	var id, repo, titulo, prazo, verificacao, imagem string
+	var id, repo, titulo, prazo, verificacao, imagem, categoria string
 	var peso float64
 	var ordem int
 
@@ -116,7 +132,7 @@ func cmdExerciciosEditar() *cobra.Command {
 			}
 			e, ok := t.Exercicio(id)
 			if !ok {
-				return fmt.Errorf("exercício %q não encontrado", id)
+				return acoes.ErroExercicio(t, id)
 			}
 			if cmd.Flags().Changed("repo") {
 				e.Repo = repo
@@ -135,6 +151,9 @@ func cmdExerciciosEditar() *cobra.Command {
 			}
 			if cmd.Flags().Changed("imagem") {
 				e.Imagem = imagem
+			}
+			if cmd.Flags().Changed("categoria") {
+				e.Categoria = categoria
 			}
 			if cmd.Flags().Changed("prazo") {
 				p, err := turma.ParseData(prazo)
@@ -162,6 +181,7 @@ func cmdExerciciosEditar() *cobra.Command {
 	c.Flags().IntVar(&ordem, "ordem", 0, "desempate na tabela quando dois exercícios têm o mesmo prazo")
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada")
 	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
+	c.Flags().StringVar(&categoria, "categoria", "", "grupo que consolida em uma avaliação do diario")
 	c.MarkFlagRequired("id")
 	return c
 }
@@ -183,7 +203,7 @@ func cmdExerciciosArquivar() *cobra.Command {
 			}
 			e, ok := t.Exercicio(id)
 			if !ok {
-				return fmt.Errorf("exercício %q não encontrado", id)
+				return acoes.ErroExercicio(t, id)
 			}
 			if reativar {
 				e.Situacao = turma.ExercicioAtivo
