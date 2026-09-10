@@ -456,8 +456,9 @@ go test ./...
 go install ./cmd/classroom
 ```
 
-Repositório git local, branch `master`, sem remote configurado. O histórico só
-existe nesta máquina, então perda do diretório é perda do projeto.
+Branch `main`, com o remote `origin` em
+`git@github.com:alexkutzke/gitlab-classroom.git`. O repositório guarda só o
+código: os dados da turma ficam fora dele, conforme "Privacidade".
 
 `go install ./cmd/classroom` é o que atualiza o binário usado no terminal.
 Depois de mexer no código, rodar isso, senão o `classroom` chamado de dentro de
