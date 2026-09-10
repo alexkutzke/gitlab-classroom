@@ -436,25 +436,66 @@ func (c *Coletor) coletarAluno(a turma.Aluno, exercicios []turma.Exercicio, eq e
 
 	for _, e := range exercicios {
 		entrega, achou := c.coletarNoGrupo(a, e, projetos, erroDoGrupo, agora)
-		if achou {
+		conv, temConvite := eq.convite(e.ID, a.GRR)
+		// Sem fork no próprio grupo, ou com fork que não rendeu entrega: pode
+		// ser entrega em dupla, dentro do fork de quem adicionou o aluno como
+		// membro.
+		if !temConvite || (achou && !podeMelhorar(entrega.Situacao)) {
 			entregas = append(entregas, entrega)
 			continue
 		}
-		// Sem fork no próprio grupo: pode ser entrega em dupla, dentro do
-		// fork de quem adicionou o aluno como membro.
-		if conv, ok := eq.convite(e.ID, a.GRR); ok {
-			compartilhada := c.coletarNoProjeto(a, e, conv.Projeto, agora)
-			compartilhada.Detalhe = "entrega compartilhada, fork de " + conv.Dono.Nome
-			entregas = append(entregas, compartilhada)
-			vinculos = append(vinculos, turma.Vinculo{
-				Exercicio: e.ID, GRR: a.GRR, Dono: conv.Dono.GRR,
-				Origem: turma.VinculoDescoberto, AtualizadoEm: agora,
-			})
+
+		compartilhada := c.coletarNoProjeto(a, e, conv.Projeto, agora)
+		compartilhada.Detalhe = "entrega compartilhada, fork de " + conv.Dono.Nome
+		// Empate fica com o fork próprio: é o repositório do aluno, e trocá-lo
+		// por um alheio de mesmo veredito só confundiria a correção.
+		if achou && precedencia(compartilhada.Situacao) >= precedencia(entrega.Situacao) {
+			entregas = append(entregas, entrega)
 			continue
 		}
-		entregas = append(entregas, entrega)
+		if achou {
+			// O fork abandonado explica por que o clone do aluno pode apontar
+			// para outro lugar do que ele mesmo criou.
+			compartilhada.Detalhe += " (fork próprio em " + entrega.Situacao.Rotulo() + ")"
+		}
+		entregas = append(entregas, compartilhada)
+		vinculos = append(vinculos, turma.Vinculo{
+			Exercicio: e.ID, GRR: a.GRR, Dono: conv.Dono.GRR,
+			Origem: turma.VinculoDescoberto, AtualizadoEm: agora,
+		})
 	}
 	return entregas, vinculos
+}
+
+// podeMelhorar diz se vale consultar o convite mesmo com o fork próprio já
+// classificado.
+//
+// O aluno que bifurca por conta e depois vai trabalhar no repositório do colega
+// deixa para trás um fork vazio, ou só com os commits do modelo. Fechar o
+// veredito nesse fork faria a entrega em dupla passar despercebida, que foi o
+// que aconteceu no exercício prepare de 2026/2. O fork que rende entrega, e o
+// veredito que não é sobre o repositório (erro, bloqueio de conta), encerram a
+// busca.
+func podeMelhorar(s turma.SituacaoEntrega) bool {
+	return s == turma.ForkSemCommit || s == turma.SemCommitNoPrazo
+}
+
+// precedencia ordena as situações da melhor para a pior, para escolher entre o
+// fork próprio e o do colega. As de fora da escala (erro e bloqueio de conta)
+// ficam por último: não são veredito sobre o trabalho, e não devem ganhar de
+// nada.
+func precedencia(s turma.SituacaoEntrega) int {
+	switch s {
+	case turma.Entregue:
+		return 0
+	case turma.SemCommitNoPrazo:
+		return 1
+	case turma.ForkSemCommit:
+		return 2
+	case turma.SemFork:
+		return 3
+	}
+	return 99
 }
 
 // projetosDoAluno devolve os repositórios do grupo do aluno, ou o erro que
@@ -473,8 +514,10 @@ func (c *Coletor) projetosDoAluno(a turma.Aluno) ([]gl.Projeto, error) {
 }
 
 // coletarNoGrupo classifica a entrega olhando só o grupo do aluno. O segundo
-// retorno diz se o veredito está fechado; quando não está, quem chama ainda
-// procura uma entrega compartilhada antes de aceitá-lo.
+// retorno diz se o fork foi encontrado ali; quando não foi, quem chama adota a
+// entrega compartilhada se houver convite. Encontrar o fork não fecha o
+// veredito sozinho: se ele não rendeu entrega, quem chama ainda compara com o
+// fork do colega.
 func (c *Coletor) coletarNoGrupo(a turma.Aluno, e turma.Exercicio, projetos []gl.Projeto, erroDoGrupo error, agora time.Time) (turma.Entrega, bool) {
 	base := turma.Entrega{Exercicio: e.ID, GRR: a.GRR, ColetadoEm: agora}
 

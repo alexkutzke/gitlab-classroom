@@ -23,6 +23,9 @@ type clienteFalso struct {
 	// erroMembros imita a consulta de membros indisponível, que é a falha que
 	// desliga a descoberta de entregas em dupla.
 	erroMembros error
+	// erroProjetos imita a falha de leitura de um grupo específico, sem
+	// derrubar a leitura dos demais.
+	erroProjetos map[string]error
 	// renovacoes conta os pedidos de descarte do cache.
 	renovacoes int
 }
@@ -75,6 +78,9 @@ func (c *clienteFalso) GruposComAcesso(busca string) ([]gl.Grupo, error) {
 func (c *clienteFalso) ProjetosDoGrupo(grupo string) ([]gl.Projeto, error) {
 	if c.erro != nil {
 		return nil, c.erro
+	}
+	if err := c.erroProjetos[grupo]; err != nil {
+		return nil, err
 	}
 	return c.projetos[grupo], nil
 }
@@ -645,6 +651,102 @@ func TestForkPróprioVenceAParticipacaoNoForkDoColega(t *testing.T) {
 	}
 	if len(res.Vinculos) != 0 {
 		t.Errorf("quem tem fork próprio não é integrante de equipe: %+v", res.Vinculos)
+	}
+}
+
+// forkDeBruno dá a Bruno um fork próprio no grupo dele, com os commits
+// informados. É o aluno que bifurcou por conta e depois foi trabalhar no
+// repositório do colega.
+func forkDeBruno(c *clienteFalso, vazio bool, commits ...gl.Commit) gl.Projeto {
+	p := gl.Projeto{
+		ID: 20, Caminho: "ds122-html-assignment",
+		Completo:   grupoBruno + "/ds122-html-assignment",
+		RamoPadrao: "main",
+		ForkDe:     "ds122-alexkutzke/ds122-html-assignment",
+		Vazio:      vazio,
+	}
+	c.projetos[grupoBruno] = []gl.Projeto{p}
+	c.commits[p.Completo] = commits
+	return p
+}
+
+// exigirCompartilhada confere que o aluno ficou com a entrega do fork do
+// colega, com o vínculo registrado.
+func exigirCompartilhada(t *testing.T, res Resultado) {
+	t.Helper()
+	e := entregaDe(t, res, "GRR20259002")
+	if e.Situacao != turma.Entregue {
+		t.Errorf("situação de Bruno = %v (%s), queria entregue", e.Situacao, e.Detalhe)
+	}
+	if e.Projeto != grupoAna+"/ds122-html-assignment" {
+		t.Errorf("projeto de Bruno = %q, queria o fork de Ana", e.Projeto)
+	}
+	if !strings.HasPrefix(e.Detalhe, "entrega compartilhada, fork de ") {
+		t.Errorf("detalhe = %q, queria o prefixo de entrega compartilhada", e.Detalhe)
+	}
+	if len(res.Vinculos) != 1 || res.Vinculos[0].GRR != "GRR20259002" {
+		t.Errorf("esperava o vínculo de Bruno para Ana: %+v", res.Vinculos)
+	}
+}
+
+func TestForkProprioVazioNaoEscondeAEntregaEmDupla(t *testing.T) {
+	c := duplaFalsa()
+	forkDeBruno(c, true)
+
+	exigirCompartilhada(t, coletarDupla(t, c))
+}
+
+func TestForkProprioSoComCommitsDoModeloNaoEscondeAEntregaEmDupla(t *testing.T) {
+	c := duplaFalsa()
+	forkDeBruno(c, false,
+		gl.Commit{SHA: "modelo1", Data: time.Date(2026, 8, 1, 10, 0, 0, 0, time.Local)},
+		gl.Commit{SHA: "modelo2", Data: time.Date(2026, 8, 2, 10, 0, 0, 0, time.Local)},
+	)
+
+	exigirCompartilhada(t, coletarDupla(t, c))
+}
+
+func TestForkProprioForaDoPrazoPerdeParaACompartilhadaNoPrazo(t *testing.T) {
+	c := duplaFalsa()
+	forkDeBruno(c, false,
+		gl.Commit{SHA: "bruno1", Data: time.Date(2026, 9, 8, 10, 0, 0, 0, time.Local)},
+	)
+
+	exigirCompartilhada(t, coletarDupla(t, c))
+}
+
+func TestEmpateEntreOsDoisForksFicaComOProprio(t *testing.T) {
+	c := duplaFalsa()
+	// Nenhum dos dois commitou: o fork de Ana só tem o que veio do modelo.
+	c.commits[grupoAna+"/ds122-html-assignment"] = nil
+	proprio := forkDeBruno(c, false)
+
+	res := coletarDupla(t, c)
+
+	e := entregaDe(t, res, "GRR20259002")
+	if e.Situacao != turma.ForkSemCommit {
+		t.Errorf("situação de Bruno = %v, queria fork_sem_commit", e.Situacao)
+	}
+	if e.Projeto != proprio.Completo {
+		t.Errorf("projeto de Bruno = %q, queria o fork dele: empate fica com o próprio", e.Projeto)
+	}
+	if len(res.Vinculos) != 0 {
+		t.Errorf("dupla descartada não registra vínculo: %+v", res.Vinculos)
+	}
+}
+
+func TestErroNoGrupoNaoViraEntregaCompartilhada(t *testing.T) {
+	c := duplaFalsa()
+	c.erroProjetos = map[string]error{grupoBruno: errors.New("500 na API")}
+
+	res := coletarDupla(t, c)
+
+	e := entregaDe(t, res, "GRR20259002")
+	if e.Situacao != turma.Erro {
+		t.Errorf("situação de Bruno = %v, queria erro: falha de API não é veredito", e.Situacao)
+	}
+	if len(res.Vinculos) != 0 {
+		t.Errorf("erro na coleta não registra vínculo: %+v", res.Vinculos)
 	}
 }
 
