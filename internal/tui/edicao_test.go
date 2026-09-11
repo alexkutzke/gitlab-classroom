@@ -316,3 +316,28 @@ func TestCNaTelaDeExerciciosNaoEditaCategoria(t *testing.T) {
 		t.Errorf("C abriu o campo %v em vez de coletar", a.catalogo.campo)
 	}
 }
+
+// Editar o prazo reordena os exercícios na gravação. O aviso tem que nomear o
+// exercício editado, e não o que passou a ocupar a posição dele no slice.
+func TestAvisoDeEdicaoNomeiaOExercicioCerto(t *testing.T) {
+	a := appExemplo(t)
+	teclar(a, "x", "D") // prazo do prepare, que é o primeiro por prazo
+	for range "2026-08-15" {
+		teclar(a, "backspace") // o campo já vem com o prazo atual
+	}
+	for _, r := range "2026-09-20" {
+		teclar(a, string(r))
+	}
+	teclar(a, "enter")
+
+	if a.erro != "" {
+		t.Fatalf("erro = %q", a.erro)
+	}
+	e, _ := a.turma.Exercicio("prepare")
+	if e.Prazo.String() != "2026-09-20" {
+		t.Fatalf("prazo = %q, queria 2026-09-20", e.Prazo.String())
+	}
+	if !strings.Contains(a.status, "prepare atualizado") {
+		t.Errorf("status = %q, queria o aviso do prepare", a.status)
+	}
+}

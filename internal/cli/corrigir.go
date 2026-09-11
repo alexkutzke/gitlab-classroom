@@ -58,11 +58,14 @@ func cmdCorrigir() *cobra.Command {
 				return nil
 			}
 
-			lancadas, apagadas := acoes.AplicarCorrecao(t, e.ID, res)
+			// O ponteiro de t.Exercicio guarda a posição no slice, e Gravar
+			// reordena: o id fica em variável antes da gravação.
+			exercicio := e.ID
+			lancadas, apagadas := acoes.AplicarCorrecao(t, exercicio, res)
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
-			fmt.Printf("%d nota(s) lançada(s), %d apagada(s) em %s.\n", lancadas, apagadas, e.ID)
+			fmt.Printf("%d nota(s) lançada(s), %d apagada(s) em %s.\n", lancadas, apagadas, exercicio)
 			return nil
 		},
 	}
@@ -99,16 +102,19 @@ func cmdNota() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("aluno %q não encontrado", grr)
 			}
+			// Gravar reordena t.Exercicios e t.Alunos, e os ponteiros guardam a
+			// posição: o que for impresso depois sai destas cópias.
+			exercicio, aluno := e.ID, *a
 
 			if remover {
-				apagadas := acoes.ApagarNota(t, e.ID, a.GRR, soEste)
+				apagadas := acoes.ApagarNota(t, exercicio, aluno.GRR, soEste)
 				if apagadas == 0 {
-					return fmt.Errorf("%s não tem nota em %s", a.GRR, e.ID)
+					return fmt.Errorf("%s não tem nota em %s", aluno.GRR, exercicio)
 				}
 				if err := s.Gravar(t); err != nil {
 					return err
 				}
-				fmt.Printf("%d nota(s) apagada(s) em %s.\n", apagadas, e.ID)
+				fmt.Printf("%d nota(s) apagada(s) em %s.\n", apagadas, exercicio)
 				return nil
 			}
 
@@ -118,17 +124,17 @@ func cmdNota() *cobra.Command {
 			if valor < 0 || valor > t.Config.NotaMaxima {
 				return fmt.Errorf("nota %g fora da escala 0 a %g", valor, t.Config.NotaMaxima)
 			}
-			alvos := acoes.LancarNota(t, e.ID, a.GRR, valor, comentario,
+			alvos := acoes.LancarNota(t, exercicio, aluno.GRR, valor, comentario,
 				cmd.Flags().Changed("comentario"), soEste)
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
 			if len(alvos) > 1 {
 				fmt.Printf("%g em %s para a entrega de %s.\n",
-					valor, e.ID, strings.Join(acoes.NomesDaEquipe(t, alvos, ""), " e "))
+					valor, exercicio, strings.Join(acoes.NomesDaEquipe(t, alvos, ""), " e "))
 				return nil
 			}
-			fmt.Printf("%s em %s: %g.\n", a.Nome, e.ID, valor)
+			fmt.Printf("%s em %s: %g.\n", aluno.Nome, exercicio, valor)
 			return nil
 		},
 	}

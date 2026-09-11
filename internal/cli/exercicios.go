@@ -166,10 +166,14 @@ func cmdExerciciosEditar() *cobra.Command {
 			if err := e.Validar(); err != nil {
 				return err
 			}
+			// Gravar reordena t.Exercicios por prazo, e o ponteiro devolvido
+			// por t.Exercicio guarda a posição, não o registro: depois da
+			// gravação ele aponta para quem tomou o lugar. Guardar o id antes.
+			editado := e.ID
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
-			fmt.Printf("Exercício %s atualizado.\n", e.ID)
+			fmt.Printf("Exercício %s atualizado.\n", editado)
 			return nil
 		},
 	}
@@ -210,10 +214,12 @@ func cmdExerciciosArquivar() *cobra.Command {
 			} else {
 				e.Situacao = turma.ExercicioArquivado
 			}
+			// Mesmo cuidado do editar: o ponteiro envelhece na gravação.
+			arquivado, situacao := e.ID, e.Situacao
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
-			fmt.Printf("Exercício %s agora está %s.\n", e.ID, e.Situacao)
+			fmt.Printf("Exercício %s agora está %s.\n", arquivado, situacao)
 			return nil
 		},
 	}

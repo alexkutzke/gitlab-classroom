@@ -92,11 +92,14 @@ func cmdAlunosEditar() *cobra.Command {
 				a.VerificadoEm = time.Time{}
 			}
 
+			// Gravar reordena t.Alunos, e o ponteiro guarda a posição: copiar o
+			// registro antes garante que a linha impressa seja a do aluno editado.
+			editado := *a
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
 			fmt.Printf("%s %s: usuário %s, grupo %s\n",
-				a.GRR, a.Nome, a.UsuarioEsperado(), ouTraco(a.Grupo))
+				editado.GRR, editado.Nome, editado.UsuarioEsperado(), ouTraco(editado.Grupo))
 			if mudou {
 				fmt.Println("Rode `classroom sync` para confirmar o acesso ao grupo.")
 			}

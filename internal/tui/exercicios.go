@@ -249,8 +249,11 @@ func (tx *telaExercicios) aplicar(a *App) {
 	}
 
 	tx.campo, tx.buffer = campoNenhum, ""
+	// Gravar reordena os exercícios por prazo, e o ponteiro guarda a posição:
+	// ler e.ID depois da gravação traria o exercício que tomou o lugar.
+	editado := e.ID
 	if a.gravar() {
-		a.avisar("%s atualizado", e.ID)
+		a.avisar("%s atualizado", editado)
 	}
 }
 

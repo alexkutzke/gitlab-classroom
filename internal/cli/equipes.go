@@ -109,12 +109,14 @@ func cmdEquipesVincular() *cobra.Command {
 				Exercicio: e.ID, GRR: integrante.GRR, Dono: proprietario.GRR,
 				Origem: turma.VinculoManual, AtualizadoEm: time.Now(),
 			})
+			// Gravar reordena t.Exercicios e t.Alunos, e os ponteiros guardam a
+			// posição no slice: o que sai na mensagem vem destas cópias.
+			exercicio, deQuem, doDono := e.ID, integrante.Nome, proprietario.Nome
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
-			fmt.Printf("%s entrega no fork de %s em %s.\n",
-				integrante.Nome, proprietario.Nome, e.ID)
-			fmt.Printf("Recolete com `classroom coletar --exercicio %s` para atualizar a situação.\n", e.ID)
+			fmt.Printf("%s entrega no fork de %s em %s.\n", deQuem, doDono, exercicio)
+			fmt.Printf("Recolete com `classroom coletar --exercicio %s` para atualizar a situação.\n", exercicio)
 			return nil
 		},
 	}
@@ -144,13 +146,14 @@ func cmdEquipesDesvincular() *cobra.Command {
 			if !ok {
 				return acoes.ErroExercicio(t, id)
 			}
-			if !t.RemoverVinculo(e.ID, grr) {
-				return fmt.Errorf("%s não tem vínculo em %s", grr, e.ID)
+			exercicio := e.ID
+			if !t.RemoverVinculo(exercicio, grr) {
+				return fmt.Errorf("%s não tem vínculo em %s", grr, exercicio)
 			}
 			if err := s.Gravar(t); err != nil {
 				return err
 			}
-			fmt.Printf("Vínculo de %s em %s desfeito.\n", grr, e.ID)
+			fmt.Printf("Vínculo de %s em %s desfeito.\n", grr, exercicio)
 			avisar("A próxima coleta pode recriá-lo se o aluno ainda for membro do fork.")
 			return nil
 		},
