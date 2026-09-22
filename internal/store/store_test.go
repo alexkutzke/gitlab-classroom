@@ -41,6 +41,12 @@ func turmaExemplo() *turma.Turma {
 			Exercicio: "html", GRR: "GRR20259002", Dono: "GRR20259001",
 			Origem: turma.VinculoDescoberto, AtualizadoEm: momento,
 		}},
+		Devolutivas: []turma.Devolutiva{{
+			Exercicio: "html", GRR: "GRR20259001",
+			Projeto: "ds122-2026-2-n-grr20259001/ds122-html-assignment",
+			Issue:   3, URL: "https://gitlab.com/x/-/issues/3",
+			PublicadoEm: momento, Hash: turma.HashComentario("faltou o rodapé"),
+		}},
 	}
 	t.Config.Padroes()
 	return t
@@ -81,6 +87,12 @@ func TestGravarECarregarPreservaTudo(t *testing.T) {
 	}
 	if lida.Vinculos[0].Origem != turma.VinculoDescoberto {
 		t.Errorf("origem do vínculo = %v", lida.Vinculos[0].Origem)
+	}
+	if len(lida.Devolutivas) != 1 || lida.Devolutivas[0].Issue != 3 {
+		t.Errorf("devolutiva não sobreviveu ao ciclo: %+v", lida.Devolutivas)
+	}
+	if lida.Devolutivas[0].Desatualizada("faltou o rodapé") {
+		t.Errorf("hash da devolutiva não sobreviveu ao ciclo: %+v", lida.Devolutivas[0])
 	}
 	if !lida.Entregas[0].DataCommit.Equal(original.Entregas[0].DataCommit) {
 		t.Errorf("data do commit mudou: %v", lida.Entregas[0].DataCommit)

@@ -28,6 +28,7 @@ const (
 	arqNotas        = "notas.csv"
 	arqVerificacoes = "verificacoes.csv"
 	arqEquipes      = "equipes.csv"
+	arqDevolutivas  = "devolutivas.csv"
 )
 
 // ErrNaoEncontrado indica que nenhum .classroom/ foi achado subindo a árvore.
@@ -103,6 +104,9 @@ func (s *Store) Carregar() (*turma.Turma, error) {
 	if t.Vinculos, err = s.lerVinculos(); err != nil {
 		return nil, err
 	}
+	if t.Devolutivas, err = s.lerDevolutivas(); err != nil {
+		return nil, err
+	}
 	t.Ordenar()
 	return t, nil
 }
@@ -128,7 +132,10 @@ func (s *Store) Gravar(t *turma.Turma) error {
 	if err := s.gravarVerificacoes(t.Verificacoes); err != nil {
 		return err
 	}
-	return s.gravarVinculos(t.Vinculos)
+	if err := s.gravarVinculos(t.Vinculos); err != nil {
+		return err
+	}
+	return s.gravarDevolutivas(t.Devolutivas)
 }
 
 // GravarConfig escreve apenas o config.toml.
@@ -458,6 +465,51 @@ func (s *Store) gravarVinculos(vs []turma.Vinculo) error {
 		})
 	}
 	return gravarCSV(s.caminho(arqEquipes), linhas)
+}
+
+// --- devolutivas ---
+
+var cabecalhoDevolutivas = []string{
+	"exercicio", "grr", "projeto", "issue", "url", "publicado_em", "hash",
+}
+
+func (s *Store) lerDevolutivas() ([]turma.Devolutiva, error) {
+	t, err := lerTabela(s.caminho(arqDevolutivas), cabecalhoDevolutivas, "exercicio")
+	if err != nil {
+		return nil, err
+	}
+	var out []turma.Devolutiva
+	for i := range t.linhas {
+		iid, err := t.inteiro(i, "issue", 0)
+		if err != nil {
+			return nil, err
+		}
+		quando, err := t.instante(i, "publicado_em")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, turma.Devolutiva{
+			Exercicio:   t.str(i, "exercicio"),
+			GRR:         turma.NormalizarGRR(t.str(i, "grr")),
+			Projeto:     t.str(i, "projeto"),
+			Issue:       int64(iid),
+			URL:         t.str(i, "url"),
+			PublicadoEm: quando,
+			Hash:        t.str(i, "hash"),
+		})
+	}
+	return out, nil
+}
+
+func (s *Store) gravarDevolutivas(ds []turma.Devolutiva) error {
+	linhas := [][]string{cabecalhoDevolutivas}
+	for _, d := range ds {
+		linhas = append(linhas, []string{
+			d.Exercicio, d.GRR, d.Projeto, strconv.FormatInt(d.Issue, 10),
+			d.URL, turma.FormatarInstante(d.PublicadoEm), d.Hash,
+		})
+	}
+	return gravarCSV(s.caminho(arqDevolutivas), linhas)
 }
 
 // --- utilidades de CSV ---

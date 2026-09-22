@@ -3,6 +3,8 @@
 package turma
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -345,6 +347,42 @@ type Vinculo struct {
 	AtualizadoEm time.Time
 }
 
+// Devolutiva registra que o comentário da correção foi publicado como issue
+// no fork do aluno.
+//
+// Fica em arquivo próprio pelo mesmo motivo das notas: é o que o professor
+// fez, e não o que o GitLab diz. A coleta não o toca.
+type Devolutiva struct {
+	Exercicio string
+	GRR       string
+	// Projeto é o caminho completo do fork onde a issue foi aberta. Na
+	// entrega em dupla é o fork do dono, e a issue é uma só.
+	Projeto string
+	// Issue é o iid, o número visto na interface, e não o id global.
+	Issue       int64
+	URL         string
+	PublicadoEm time.Time
+	// Hash identifica o comentário publicado. Comparado com o comentário
+	// atual, é o que diz que o professor mudou a devolutiva depois de
+	// publicá-la.
+	Hash string
+}
+
+// Desatualizada informa se o comentário mudou depois da publicação.
+func (d Devolutiva) Desatualizada(comentario string) bool {
+	return d.Hash != "" && d.Hash != HashComentario(comentario)
+}
+
+// HashComentario resume o comentário em seis dígitos hexadecimais.
+//
+// Seis dígitos bastam para o que se pergunta aqui, que é se este texto é o
+// mesmo de antes, e cabem na linha do CSV sem atrapalhar a leitura. O espaço
+// em volta sai antes: reindentar o comentário não é mudar a devolutiva.
+func HashComentario(s string) string {
+	soma := sha256.Sum256([]byte(strings.TrimSpace(s)))
+	return hex.EncodeToString(soma[:])[:6]
+}
+
 // Config são os metadados da turma, persistidos em config.toml.
 type Config struct {
 	Codigo     string `toml:"codigo"`
@@ -470,6 +508,7 @@ type Turma struct {
 	Notas        []Nota
 	Verificacoes []Verificacao
 	Vinculos     []Vinculo
+	Devolutivas  []Devolutiva
 }
 
 // Dono devolve o GRR de quem tem o fork usado por este aluno no exercício.
@@ -801,6 +840,16 @@ func (t *Turma) Ordenar() {
 	ordenarEntregas(t.Entregas)
 	ordenarNotas(t.Notas)
 	ordenarVerificacoes(t.Verificacoes)
+	ordenarDevolutivas(t.Devolutivas)
+}
+
+func ordenarDevolutivas(ds []Devolutiva) {
+	sort.SliceStable(ds, func(i, j int) bool {
+		if ds[i].Exercicio != ds[j].Exercicio {
+			return ds[i].Exercicio < ds[j].Exercicio
+		}
+		return ds[i].GRR < ds[j].GRR
+	})
 }
 
 func ordenarVerificacoes(vs []Verificacao) {
@@ -901,6 +950,39 @@ func (t *Turma) RemoverNota(exercicio, grr string) bool {
 		}
 	}
 	return false
+}
+
+// Devolutiva devolve o registro de publicação de um aluno em um exercício.
+func (t *Turma) Devolutiva(exercicio, grr string) (*Devolutiva, bool) {
+	grr = NormalizarGRR(grr)
+	for i := range t.Devolutivas {
+		if t.Devolutivas[i].Exercicio == exercicio && t.Devolutivas[i].GRR == grr {
+			return &t.Devolutivas[i], true
+		}
+	}
+	return nil, false
+}
+
+// DevolutivasDoExercicio devolve os registros de um exercício, por GRR.
+func (t *Turma) DevolutivasDoExercicio(exercicio string) map[string]Devolutiva {
+	out := map[string]Devolutiva{}
+	for _, d := range t.Devolutivas {
+		if d.Exercicio == exercicio {
+			out[d.GRR] = d
+		}
+	}
+	return out
+}
+
+// RegistrarDevolutiva insere ou substitui o registro de um aluno.
+func (t *Turma) RegistrarDevolutiva(d Devolutiva) {
+	d.GRR = NormalizarGRR(d.GRR)
+	if p, ok := t.Devolutiva(d.Exercicio, d.GRR); ok {
+		*p = d
+		return
+	}
+	t.Devolutivas = append(t.Devolutivas, d)
+	ordenarDevolutivas(t.Devolutivas)
 }
 
 // Resultado reúne as notas de um aluno e a média ponderada.

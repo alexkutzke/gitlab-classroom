@@ -53,6 +53,15 @@ type Commit struct {
 	Data   time.Time
 }
 
+// Issue é uma issue do GitLab, do jeito que interessa aqui.
+type Issue struct {
+	// IID é o número visto na interface e usado nas rotas da API, e não o
+	// id global.
+	IID    int64
+	Titulo string
+	URL    string
+}
+
 // Cliente é o que a coleta consome. As implementações precisam ser seguras
 // para uso concorrente: a coleta roda vários alunos ao mesmo tempo.
 type Cliente interface {
@@ -90,6 +99,13 @@ type Cliente interface {
 	// Membros lista quem está associado a um projeto, herança de grupo
 	// incluída.
 	Membros(projeto string) ([]Membro, error)
+	// IssuesDoProjeto lista as issues abertas de um projeto. É o que permite
+	// reconhecer a devolutiva já publicada sem depender do arquivo local.
+	IssuesDoProjeto(projeto string) ([]Issue, error)
+	// CriarIssue abre uma issue no projeto e devolve o que foi criado.
+	CriarIssue(projeto, titulo, corpo string) (Issue, error)
+	// ComentarIssue acrescenta um comentário a uma issue existente.
+	ComentarIssue(projeto string, iid int64, corpo string) error
 	// Renovar descarta as listagens memorizadas.
 	//
 	// O cache existe para os oito trabalhadores de uma coleta não pedirem a
@@ -123,6 +139,7 @@ type clienteAPI struct {
 	commits  *cache[[]Commit]
 	ramos    *cache[[]string]
 	membros  *cache[[]Membro]
+	issues   *cache[[]Issue]
 }
 
 // Renovar descarta as listagens memorizadas na sessão anterior.
@@ -132,6 +149,7 @@ func (g *clienteAPI) Renovar() {
 	g.commits.limpar()
 	g.ramos.limpar()
 	g.membros.limpar()
+	g.issues.limpar()
 }
 
 // Novo abre um cliente autenticado.
@@ -154,6 +172,7 @@ func Novo(host, token string) (Cliente, error) {
 		commits:  novoCache[[]Commit](),
 		ramos:    novoCache[[]string](),
 		membros:  novoCache[[]Membro](),
+		issues:   novoCache[[]Issue](),
 	}, nil
 }
 
@@ -367,6 +386,55 @@ func (g *clienteAPI) Membros(projeto string) ([]Membro, error) {
 	})
 }
 
+func (g *clienteAPI) IssuesDoProjeto(projeto string) ([]Issue, error) {
+	return g.issues.obter(projeto, func() ([]Issue, error) {
+		var out []Issue
+		opt := &api.ListProjectIssuesOptions{
+			State:       api.Ptr("opened"),
+			ListOptions: api.ListOptions{PerPage: porPagina, Page: 1},
+		}
+		for {
+			is, resp, err := g.c.Issues.ListProjectIssues(projeto, opt)
+			if err != nil {
+				return nil, traduzirErroDeIssue(err, resp, "listando as issues de "+projeto)
+			}
+			for _, i := range is {
+				out = append(out, Issue{IID: i.IID, Titulo: i.Title, URL: i.WebURL})
+			}
+			if resp == nil || resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
+		}
+		return out, nil
+	})
+}
+
+// CriarIssue abre a issue. Escrita não é memorizada, e a listagem de issues
+// do projeto fica velha depois dela: quem publicar em série precisa contar
+// com o que criou, e não com o cache.
+func (g *clienteAPI) CriarIssue(projeto, titulo, corpo string) (Issue, error) {
+	i, resp, err := g.c.Issues.CreateIssue(projeto, &api.CreateIssueOptions{
+		Title:       api.Ptr(titulo),
+		Description: api.Ptr(corpo),
+	})
+	if err != nil {
+		return Issue{}, traduzirErroDeIssue(err, resp, "abrindo a issue em "+projeto)
+	}
+	return Issue{IID: i.IID, Titulo: i.Title, URL: i.WebURL}, nil
+}
+
+func (g *clienteAPI) ComentarIssue(projeto string, iid int64, corpo string) error {
+	_, resp, err := g.c.Notes.CreateIssueNote(projeto, iid, &api.CreateIssueNoteOptions{
+		Body: api.Ptr(corpo),
+	})
+	if err != nil {
+		return traduzirErroDeIssue(err, resp,
+			fmt.Sprintf("comentando a issue %d de %s", iid, projeto))
+	}
+	return nil
+}
+
 func converterGrupo(g *api.Group) Grupo {
 	return Grupo{
 		ID:      g.ID,
@@ -409,6 +477,22 @@ func converterCommit(c *api.Commit) Commit {
 	return x
 }
 
+// traduzirErroDeIssue explica o 404 que o gitlab.com devolve quando o token
+// não tem permissão sobre o projeto.
+//
+// Publicar devolutiva é escrita, e escrita pede o escopo api: o read_api da
+// coleta lê tudo e não abre issue nenhuma. O projeto do aluno também some do
+// token que perdeu a associação ao grupo, e os dois casos chegam aqui como
+// "404 project not found", que sozinho não diz nada.
+func traduzirErroDeIssue(err error, resp *api.Response, contexto string) error {
+	if resp != nil && (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden) {
+		return fmt.Errorf("%s: o GitLab recusou por permissão. "+
+			"Publicar issue exige token com escopo api, e não read_api, "+
+			"e o professor precisa continuar associado ao grupo do aluno", contexto)
+	}
+	return traduzirErro(err, contexto)
+}
+
 // traduzirErro troca as falhas mais comuns por instrução acionável, em vez de
 // devolver o código HTTP cru.
 func traduzirErro(err error, contexto string) error {
@@ -416,10 +500,10 @@ func traduzirErro(err error, contexto string) error {
 	if errors.As(err, &resp) && resp.Response != nil {
 		switch resp.Response.StatusCode {
 		case http.StatusUnauthorized:
-			return fmt.Errorf("%s: token recusado; gere um token com escopo read_api em %s",
+			return fmt.Errorf("%s: token recusado; gere um token com escopo read_api, ou api para publicar devolutiva, em %s",
 				contexto, "https://gitlab.com/-/user_settings/personal_access_tokens")
 		case http.StatusForbidden:
-			return fmt.Errorf("%s: token sem permissão; o escopo read_api é o necessário", contexto)
+			return fmt.Errorf("%s: token sem permissão; read_api basta para ler, e publicar devolutiva exige api", contexto)
 		case http.StatusTooManyRequests:
 			return fmt.Errorf("%s: limite de requisições do GitLab atingido; reduza paralelismo no config.toml", contexto)
 		}

@@ -31,6 +31,9 @@ secret-tool store --label='GitLab classroom' service gitlab user alexkutzke
 Também vale apontar um arquivo em `token_arquivo`, no `config.toml`. O token
 nunca é gravado dentro de `.classroom/`.
 
+`read_api` basta para coletar, clonar, verificar e corrigir. `classroom
+devolutiva` publica issue no fork do aluno, e escrita exige o escopo `api`.
+
 ```bash
 classroom token    # diz de onde veio o token e testa a conexão
 ```
@@ -269,6 +272,45 @@ classroom nota --exercicio html --grr GRR20259001 --valor 90 --comentario "falto
 classroom nota --exercicio html --grr GRR20259001 --remover
 ```
 
+### Publicar a devolutiva ao aluno
+
+O comentário escrito na correção fica em `notas.csv` e, sozinho, não chega a
+quem entregou. `classroom devolutiva` publica cada um como issue no fork do
+próprio aluno, ao lado do código a que se refere.
+
+```bash
+classroom devolutiva --exercicio html                        # ensaio
+classroom devolutiva --exercicio html --aplicar --prazo 2026-10-05
+classroom devolutiva --exercicio html --grr GRR20259001 --refazer --aplicar
+classroom devolutiva                                         # o que já foi publicado
+```
+
+Publicar é escrita, e o token precisa do escopo `api`. O `read_api` que basta
+para coletar não abre issue, e o gitlab.com responde a isso com um 404 de
+projeto inexistente, que o comando traduz.
+
+Entra na rodada quem tem nota lançada **com comentário** e fork conhecido. Os
+demais aparecem no resumo do final com o motivo: sem nota, nota sem comentário
+ou sem fork. Quem não entregou fica de fora porque não há onde publicar, e
+esses casos seguem por e-mail.
+
+Sem `--aplicar` nada é enviado: o ensaio é o padrão. A issue não leva nota, nem
+no título nem no corpo, e fica aberta para o aluno responder; o registro da
+nota continua sendo o `diario` e o UFPR Virtual. A menção ao usuário no corpo é
+o que gera a notificação, e o aluno sem `usuario` cadastrado recebe a issue sem
+menção.
+
+O que foi publicado fica em `devolutivas.csv`, com o número da issue e um
+resumo do comentário. Na rodada seguinte, quem já tem issue com o mesmo
+comentário fica de fora, e quem teve o comentário alterado depois aparece como
+devolutiva desatualizada, republicada só com `--refazer`, que acrescenta um
+comentário à issue existente em vez de abrir outra. Issue de mesmo título já
+aberta no projeto é reconhecida e registrada sem publicar nada, o que cobre o
+arquivo perdido e a issue criada à mão.
+
+Na entrega em dupla há um fork só, então há uma issue só, com os dois
+mencionados.
+
 ### Planilha de notas
 
 ```bash
@@ -467,7 +509,8 @@ ds122_n/
     ├── entregas.csv         # o que o GitLab diz
     ├── notas.csv            # o que o professor decidiu
     ├── verificacoes.csv     # o que a suíte automatizada apurou
-    └── equipes.csv          # quem entregou no fork de quem
+    ├── equipes.csv          # quem entregou no fork de quem
+    └── devolutivas.csv      # que comentário já virou issue no fork do aluno
 ```
 
 Os clones dos forks ficam fora do `.classroom/`, em

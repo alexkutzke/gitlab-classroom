@@ -55,6 +55,7 @@ func Executar() error {
 		cmdStatus(),
 		cmdVerificar(),
 		cmdCorrigir(),
+		cmdDevolutiva(),
 		cmdNota(),
 		cmdNotas(),
 		cmdRelatorio(),

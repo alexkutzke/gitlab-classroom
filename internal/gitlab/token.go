@@ -19,9 +19,10 @@ var ErrSemToken = errors.New("token de acesso ao GitLab não encontrado")
 
 // Instrucoes explica como fornecer o token. Acompanha ErrSemToken em todas as
 // mensagens de erro dos comandos.
-const Instrucoes = `Gere um token pessoal com escopo read_api em
-https://gitlab.com/-/user_settings/personal_access_tokens e forneça-o de uma
-destas formas:
+const Instrucoes = `Gere um token pessoal em
+https://gitlab.com/-/user_settings/personal_access_tokens, com escopo read_api
+para os comandos que apenas leem ou api para também publicar devolutiva, e
+forneça-o de uma destas formas:
 
   classroom <comando> --token glpat-...
   export GITLAB_TOKEN=glpat-...

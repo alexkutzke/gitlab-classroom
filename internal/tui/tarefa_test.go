@@ -68,6 +68,16 @@ func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) {
 	return c.membros[projeto], nil
 }
 
+// Publicar devolutiva não faz parte destes testes: os métodos existem para
+// o dublê continuar satisfazendo a interface Cliente.
+func (c *clienteFalso) IssuesDoProjeto(projeto string) ([]gl.Issue, error) { return nil, nil }
+
+func (c *clienteFalso) CriarIssue(projeto, titulo, corpo string) (gl.Issue, error) {
+	return gl.Issue{}, nil
+}
+
+func (c *clienteFalso) ComentarIssue(projeto string, iid int64, corpo string) error { return nil }
+
 func clienteComEntrega() *clienteFalso {
 	grupo := "ds122-2026-2-n-grr20259001"
 	fork := grupo + "/ds122-prepare-assignment"

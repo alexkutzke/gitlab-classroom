@@ -169,8 +169,9 @@ Token: procurado nesta ordem, e nunca gravado em `.classroom/`.
    instalado nesta máquina);
 4. caminho indicado em `token_arquivo` no `config.toml`.
 
-Escopo necessário: `read_api`. Erro de autenticação precisa dizer qual escopo
-falta e como gerar o token, não devolver `401` cru.
+Escopo necessário: `read_api` para tudo o que lê, e `api` para `classroom
+devolutiva`, que abre issue no fork do aluno. Erro de autenticação precisa
+dizer qual escopo falta e como gerar o token, não devolver `401` cru.
 
 Chamada de API respeita o limite de requisições do gitlab.com: pool de
 trabalhadores configurável (padrão 8), repetição com espera crescente em
@@ -196,6 +197,7 @@ resolve.
 | `classroom abrir` | abre o clone no editor, ou o projeto no navegador |
 | `classroom verificar` | roda a suíte do exercício sobre os clones, em contêiner |
 | `classroom corrigir` | interface interativa de correção |
+| `classroom devolutiva` | publica o comentário da correção como issue no fork do aluno |
 | `classroom nota` | lança ou apaga uma nota isolada |
 | `classroom notas` | planilha de notas por exercício e média; `--consolidar` gera o CSV que o `diario` importa, e `--categoria` escolhe entre exercícios e trabalho |
 
@@ -283,6 +285,38 @@ sozinha e mostra os logins sem dono com um palpite de quem são, de
 `turma.Sugerir`: dois pedaços de nome em comum, partículas fora, e resposta só
 quando o candidato é único. O palpite nunca grava nada, porque errar aqui
 significa atribuir a entrega de um aluno a outro.
+
+## Devolutiva ao aluno
+
+O comentário da correção fica em `notas.csv` e não chega a quem entregou.
+`classroom devolutiva` o publica como issue no fork do aluno, e grava em
+`devolutivas.csv` o que foi publicado.
+
+Decisões que o código respeita:
+
+- **a issue não leva nota**, nem no título nem no corpo. A nota vive no
+  `diario` e no UFPR Virtual, e um segundo lugar teria de acompanhar toda
+  recorreção;
+- **o ensaio é o padrão.** Sem `--aplicar`, nada é enviado ao GitLab;
+- entra quem tem nota com comentário não vazio e projeto conhecido em
+  `entregas.csv`. Quem não entregou não recebe issue: sem fork não há onde
+  publicar, e esses alunos são tratados por e-mail;
+- a issue fica aberta, e o corpo diz até quando o aluno pode comentar
+  (`--prazo`). A menção ao usuário é o que notifica; sem `usuario` cadastrado,
+  publica sem menção. Não atribuir nem etiquetar é deliberado: atribuir exige o
+  id numérico da conta, e etiqueta teria de ser criada em cada projeto;
+- a coluna `hash` são seis dígitos do SHA-256 do comentário publicado, e é o
+  que distingue "já publicada" de "devolutiva desatualizada". A desatualizada
+  só sai de novo com `--refazer`, como comentário na issue existente;
+- issue de mesmo título já aberta no projeto reconstrói a linha sem publicar,
+  defesa para o arquivo perdido e para a issue criada à mão;
+- **a coleta nunca toca em `devolutivas.csv`**, mesma razão do `notas.csv`;
+- entrega compartilhada gera uma issue só, no fork onde a entrega está, com os
+  integrantes mencionados juntos.
+
+Publicar é escrita, e escrita exige token com escopo `api`. O `read_api` da
+coleta não abre issue, e o gitlab.com recusa com 404 de projeto inexistente: o
+erro precisa dizer isso com todas as letras.
 
 ## Interface interativa
 
