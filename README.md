@@ -280,6 +280,8 @@ próprio aluno, ao lado do código a que se refere.
 
 ```bash
 classroom devolutiva --exercicio html                        # ensaio
+classroom devolutiva --exercicio html --texto                # ensaio, com o texto de cada um
+classroom devolutiva --exercicio html --aplicar --confirmar --prazo 2026-10-05
 classroom devolutiva --exercicio html --aplicar --prazo 2026-10-05
 classroom devolutiva --exercicio html --grr GRR20259001 --refazer --aplicar
 classroom devolutiva                                         # o que já foi publicado
@@ -310,6 +312,45 @@ arquivo perdido e a issue criada à mão.
 
 Na entrega em dupla há um fork só, então há uma issue só, com os dois
 mencionados.
+
+#### Conferir e revisar antes de publicar
+
+O comentário foi escrito para a planilha do professor e vira mensagem pública
+para o aluno, o que costuma pedir ajuste de uma frase ou outra. `--texto`
+mostra, no ensaio, o corpo inteiro que cada um receberia, em lugar da tabela:
+
+```bash
+classroom devolutiva --exercicio html --texto
+```
+
+O que aparece na tela é o mesmo texto que vai para o GitLab, montado pela
+mesma função, com quebra em 72 colunas só na exibição. O markdown enviado vai
+sem quebra forçada, e o navegador reflui.
+
+`--confirmar` percorre a turma um aluno de cada vez, mostrando o mesmo bloco
+antes de cada publicação:
+
+```bash
+classroom devolutiva --exercicio html --aplicar --confirmar --prazo 2026-10-05
+```
+
+As respostas são `s` para publicar, `n` para pular, `e` para editar o
+comentário no `$EDITOR`, `t` para publicar o atual e todos os restantes sem
+perguntar de novo, e `q` para encerrar a rodada. O editor recebe apenas o
+comentário; a menção e o rodapé do prazo são montados na hora do envio.
+
+O texto salvo na edição vira o comentário da correção em `notas.csv`, porque
+não existe versão publicada diferente da versão guardada: é isso que mantém o
+`hash` valendo como detector de devolutiva desatualizada. O `corrigido_em` não
+muda, já que a nota continua a mesma.
+
+Cada publicação grava `devolutivas.csv` na hora, e não ao final da rodada.
+Sair com `q`, interromper com `Ctrl+C` ou perder a rede deixa registrado o que
+já foi para o GitLab, senão a rodada seguinte abriria a issue outra vez e o
+aluno receberia a devolutiva em duplicata.
+
+`--confirmar` exige `--aplicar` e terminal interativo. Num script, o comando
+recusa com erro em vez de ficar parado esperando uma resposta que não vem.
 
 ### Planilha de notas
 

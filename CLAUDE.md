@@ -297,7 +297,21 @@ Decisões que o código respeita:
 - **a issue não leva nota**, nem no título nem no corpo. A nota vive no
   `diario` e no UFPR Virtual, e um segundo lugar teria de acompanhar toda
   recorreção;
-- **o ensaio é o padrão.** Sem `--aplicar`, nada é enviado ao GitLab;
+- **o ensaio é o padrão.** Sem `--aplicar`, nada é enviado ao GitLab. Com
+  `--texto`, o ensaio mostra o corpo de cada aluno em vez da tabela, e o corpo
+  mostrado sai da mesma função que monta o publicado: montagem em dois lugares
+  faria o ensaio deixar de valer como conferência;
+- `--confirmar` percorre a rodada aluno a aluno, com `s`, `n`, `e`, `t` e `q`.
+  O `e` abre no `$EDITOR` apenas o comentário, sem a menção nem o rodapé do
+  prazo, e grava o texto novo em `notas.csv`, sem mexer no `corrigido_em`: a
+  nota não mudou, e o comentário publicado tem de ser o comentário guardado,
+  senão o `hash` para de detectar devolutiva desatualizada. A opção exige
+  `--aplicar` e terminal interativo, e recusa num script em vez de travar
+  esperando `stdin`;
+- **`devolutivas.csv` é gravado a cada publicação**, e não ao final. Sair com
+  `q`, um `Ctrl+C` ou uma queda de rede não pode perder o registro do que já
+  foi para o GitLab, senão a rodada seguinte republica e o aluno recebe a
+  devolutiva duas vezes;
 - entra quem tem nota com comentário não vazio e projeto conhecido em
   `entregas.csv`. Quem não entregou não recebe issue: sem fork não há onde
   publicar, e esses alunos são tratados por e-mail;
