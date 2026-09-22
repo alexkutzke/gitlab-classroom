@@ -23,7 +23,34 @@ type OpcoesDevolutiva struct {
 	Refazer bool
 	// Prazo é a data até quando o aluno pode comentar, escrita no corpo.
 	Prazo turma.Data
+	// Confirmar, quando definida, pergunta aluno a aluno antes de cada
+	// publicação. Só vale com Aplicar: revisar sem publicar é o ensaio.
+	Confirmar func(ItemDevolutiva) (DecisaoDevolutiva, error)
+	// Editar abre o comentário da correção para edição e devolve o texto
+	// novo. Recebe e devolve apenas o comentário, sem a menção nem o
+	// rodapé, que são montados na hora da publicação.
+	Editar func(comentario string) (string, error)
+	// Gravar persiste a turma. É chamada a cada publicação, e não ao final
+	// da rodada: interrupção no meio não pode perder o registro do que já
+	// foi para o GitLab, senão a rodada seguinte republica a issue.
+	Gravar func() error
 }
+
+// DecisaoDevolutiva é a resposta da revisão texto por texto.
+type DecisaoDevolutiva string
+
+const (
+	// DecisaoPublicar publica o aluno atual e segue para o próximo.
+	DecisaoPublicar DecisaoDevolutiva = "publicar"
+	// DecisaoPular deixa o aluno de fora, sem publicar nem registrar.
+	DecisaoPular DecisaoDevolutiva = "pular"
+	// DecisaoEditar abre o comentário para edição e volta a perguntar.
+	DecisaoEditar DecisaoDevolutiva = "editar"
+	// DecisaoTodas publica o atual e os restantes sem perguntar de novo.
+	DecisaoTodas DecisaoDevolutiva = "todas"
+	// DecisaoSair encerra a rodada, preservando o que já foi publicado.
+	DecisaoSair DecisaoDevolutiva = "sair"
+)
 
 // AcaoDevolutiva é o que a rodada faz com um aluno.
 type AcaoDevolutiva string
@@ -48,6 +75,8 @@ const (
 	MotivoSemFork       = "sem fork"
 	MotivoJaPublicada   = "já publicada"
 	MotivoDesatualizada = "devolutiva desatualizada"
+	MotivoPulada        = "pulada na revisão"
+	MotivoNaoRevisada   = "rodada encerrada antes da revisão"
 )
 
 // ItemDevolutiva é o que a rodada apurou sobre um aluno.
@@ -128,8 +157,14 @@ func Devolutivas(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios
 		}
 	}
 
+	porID := map[string]turma.Exercicio{}
+	for _, e := range exercicios {
+		porID[e.ID] = e
+	}
+
 	feito := 0
-	for _, it := range planos {
+	revisar := o.Aplicar && o.Confirmar != nil
+	for i, it := range planos {
 		if it.Acao == DevolutivaPular {
 			res.Fora[it.Motivo]++
 			res.Itens = append(res.Itens, it)
@@ -139,6 +174,30 @@ func Devolutivas(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios
 			res.Itens = append(res.Itens, it)
 			return res, err
 		}
+
+		if revisar {
+			dec, err := revisarDevolutiva(t, porID[it.Exercicio], &it, o)
+			if err != nil {
+				res.Itens = append(res.Itens, it)
+				return res, err
+			}
+			switch dec {
+			case DecisaoSair:
+				// O que já foi publicado está gravado. O resto entra no
+				// resumo como não revisado, para a contagem final não
+				// sugerir que a rodada cobriu a turma inteira.
+				encerrarRevisao(&res, planos[i:])
+				return res, nil
+			case DecisaoPular:
+				it.Acao, it.Motivo = DevolutivaPular, MotivoPulada
+				res.Fora[it.Motivo]++
+				res.Itens = append(res.Itens, it)
+				continue
+			case DecisaoTodas:
+				revisar = false
+			}
+		}
+
 		feito++
 		prog.avisar(feito, total, it.Nome)
 
@@ -148,6 +207,13 @@ func Devolutivas(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios
 				res.Erros = append(res.Erros, fmt.Sprintf("%s: %v", it.Nome, err))
 				res.Itens = append(res.Itens, it)
 				continue
+			}
+			// Gravar aqui, e não no fim: queda de rede ou Ctrl+C depois
+			// desta issue não pode apagar o registro dela.
+			if o.Gravar != nil {
+				if err := o.Gravar(); err != nil {
+					return res, err
+				}
 			}
 		}
 		switch it.Acao {
@@ -161,6 +227,58 @@ func Devolutivas(ctx context.Context, t *turma.Turma, cli gl.Cliente, exercicios
 		res.Itens = append(res.Itens, it)
 	}
 	return res, nil
+}
+
+// revisarDevolutiva pergunta o que fazer com um aluno, repetindo a pergunta
+// depois de cada edição do comentário.
+//
+// A edição grava o texto novo em notas.csv: o comentário publicado é o
+// comentário da correção, senão o hash deixaria de detectar a devolutiva
+// desatualizada. O corrigido_em não muda, porque a nota não mudou.
+func revisarDevolutiva(t *turma.Turma, e turma.Exercicio, it *ItemDevolutiva, o OpcoesDevolutiva) (DecisaoDevolutiva, error) {
+	for {
+		dec, err := o.Confirmar(*it)
+		if err != nil {
+			return "", err
+		}
+		if dec != DecisaoEditar {
+			return dec, nil
+		}
+		if o.Editar == nil {
+			continue
+		}
+		novo, err := o.Editar(it.Comentario)
+		if err != nil {
+			return "", err
+		}
+		novo = strings.TrimSpace(novo)
+		if novo == "" || novo == strings.TrimSpace(it.Comentario) {
+			continue
+		}
+		if n, ok := t.Nota(it.Exercicio, it.GRR); ok {
+			n.Comentario = novo
+		}
+		it.Comentario = novo
+		it.Hash = turma.HashComentario(novo)
+		it.Corpo = corpoDevolutiva(t, e, *it, o.Prazo)
+		if o.Gravar != nil {
+			if err := o.Gravar(); err != nil {
+				return "", err
+			}
+		}
+	}
+}
+
+// encerrarRevisao registra no resumo os alunos que a saída antecipada deixou
+// sem revisar.
+func encerrarRevisao(res *ResumoDevolutiva, restantes []ItemDevolutiva) {
+	for _, it := range restantes {
+		if it.Acao != DevolutivaPular {
+			it.Acao, it.Motivo = DevolutivaPular, MotivoNaoRevisada
+		}
+		res.Fora[it.Motivo]++
+		res.Itens = append(res.Itens, it)
+	}
 }
 
 // alunosDaRodada resolve os GRRs informados, ou devolve a turma ativa.

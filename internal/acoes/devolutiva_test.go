@@ -2,6 +2,7 @@ package acoes
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -340,5 +341,227 @@ func TestDevolutivasEntregaCompartilhadaGeraUmaIssue(t *testing.T) {
 		if d.Issue != 1 || d.Projeto != forkAna {
 			t.Errorf("%s registrado em %s #%d", grr, d.Projeto, d.Issue)
 		}
+	}
+}
+
+const forkDani = "ds122-2026-2-n-grr20259004/ds122-html-assignment"
+
+// turmaRevisao monta três alunos corrigidos, com fork e comentário, que é o
+// mínimo para exercitar a revisão texto por texto.
+func turmaRevisao() *turma.Turma {
+	tu := turmaExemplo()
+	tu.Alunos = append(tu.Alunos, turma.Aluno{
+		GRR: "GRR20259004", Nome: "DANI ROCHA", Usuario: "grr20259004",
+	})
+	tu.Entregas = append(tu.Entregas, turma.Entrega{
+		Exercicio: "html", GRR: "GRR20259004", Situacao: turma.Entregue,
+		Projeto: forkDani, Commit: "444555666777",
+	})
+	tu.RegistrarNota(turma.Nota{Exercicio: "html", GRR: "GRR20259002", Valor: 70,
+		Comentario: "o menu não fecha em tela estreita"})
+	tu.RegistrarNota(turma.Nota{Exercicio: "html", GRR: "GRR20259004", Valor: 90,
+		Comentario: "só falta o alt nas imagens da galeria"})
+	// Carla não tem fork e continua fora da rodada.
+	tu.RemoverNota("html", "GRR20259003")
+	tu.Ordenar()
+	return tu
+}
+
+// respostas devolve um revisor que consome decisões de uma fila, no lugar do
+// terminal. Nenhum teste desta aplicação lê teclado nem abre editor.
+func respostas(decisoes ...DecisaoDevolutiva) (func(ItemDevolutiva) (DecisaoDevolutiva, error), *[]string) {
+	vistos := &[]string{}
+	i := 0
+	return func(it ItemDevolutiva) (DecisaoDevolutiva, error) {
+		*vistos = append(*vistos, it.Nome)
+		if i >= len(decisoes) {
+			return DecisaoSair, nil
+		}
+		d := decisoes[i]
+		i++
+		return d, nil
+	}, vistos
+}
+
+func TestDevolutivasEnsaioMontaOCorpoDeCadaAluno(t *testing.T) {
+	tu := turmaRevisao()
+	cli := &clienteIssues{}
+
+	res, err := Devolutivas(context.Background(), tu, cli, exercicioHTML(t, tu),
+		OpcoesDevolutiva{}, nil)
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(cli.criadas) != 0 {
+		t.Fatalf("o ensaio abriu %d issue(s)", len(cli.criadas))
+	}
+	corpos := 0
+	for _, it := range res.Itens {
+		if it.Acao == DevolutivaPular {
+			continue
+		}
+		corpos++
+		if strings.TrimSpace(it.Corpo) == "" {
+			t.Errorf("%s entrou na rodada sem corpo montado", it.Nome)
+		}
+	}
+	if corpos != 3 {
+		t.Errorf("alunos com corpo = %d, esperado 3", corpos)
+	}
+}
+
+func TestDevolutivasCorpoDoEnsaioIgualAoPublicado(t *testing.T) {
+	prazo := turma.NovaData(2026, time.October, 5)
+
+	ensaio, err := Devolutivas(context.Background(), turmaRevisao(), &clienteIssues{},
+		exercicioHTML(t, turmaRevisao()), OpcoesDevolutiva{Prazo: prazo}, nil)
+	if err != nil {
+		t.Fatalf("ensaio: %v", err)
+	}
+
+	tu := turmaRevisao()
+	cli := &clienteIssues{}
+	if _, err := Devolutivas(context.Background(), tu, cli, exercicioHTML(t, tu),
+		OpcoesDevolutiva{Aplicar: true, Prazo: prazo}, nil); err != nil {
+		t.Fatalf("publicação: %v", err)
+	}
+
+	var previstos []string
+	for _, it := range ensaio.Itens {
+		if it.Acao != DevolutivaPular {
+			previstos = append(previstos, it.Corpo)
+		}
+	}
+	if len(previstos) != len(cli.criadas) {
+		t.Fatalf("ensaio previu %d corpo(s) e a rodada publicou %d", len(previstos), len(cli.criadas))
+	}
+	for i, c := range cli.criadas {
+		if c.Corpo != previstos[i] {
+			t.Errorf("corpo publicado difere do ensaiado:\n--- ensaio ---\n%s\n--- publicado ---\n%s",
+				previstos[i], c.Corpo)
+		}
+	}
+}
+
+func TestRevisaoPublicaEPula(t *testing.T) {
+	tu := turmaRevisao()
+	cli := &clienteIssues{}
+	confirmar, vistos := respostas(DecisaoPublicar, DecisaoPular, DecisaoPublicar)
+
+	res, err := Devolutivas(context.Background(), tu, cli, exercicioHTML(t, tu),
+		OpcoesDevolutiva{Aplicar: true, Confirmar: confirmar}, nil)
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(*vistos) != 3 {
+		t.Fatalf("alunos apresentados = %v", *vistos)
+	}
+	if len(cli.criadas) != 2 {
+		t.Fatalf("issues criadas = %d, esperado 2", len(cli.criadas))
+	}
+	if res.Fora[MotivoPulada] != 1 {
+		t.Errorf("motivo %q = %d, esperado 1", MotivoPulada, res.Fora[MotivoPulada])
+	}
+	if _, ok := tu.Devolutiva("html", "GRR20259002"); ok {
+		t.Error("o aluno pulado ficou registrado em devolutivas")
+	}
+	for _, grr := range []string{"GRR20259001", "GRR20259004"} {
+		if _, ok := tu.Devolutiva("html", grr); !ok {
+			t.Errorf("%s publicado sem registro", grr)
+		}
+	}
+}
+
+func TestRevisaoSairPreservaOQueJaFoiPublicado(t *testing.T) {
+	tu := turmaRevisao()
+	cli := &clienteIssues{}
+	gravacoes := 0
+	confirmar, _ := respostas(DecisaoPublicar, DecisaoSair)
+
+	res, err := Devolutivas(context.Background(), tu, cli, exercicioHTML(t, tu),
+		OpcoesDevolutiva{
+			Aplicar: true, Confirmar: confirmar,
+			Gravar: func() error { gravacoes++; return nil },
+		}, nil)
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(cli.criadas) != 1 {
+		t.Fatalf("issues criadas = %d, esperado 1", len(cli.criadas))
+	}
+	if gravacoes != 1 {
+		t.Errorf("gravações = %d, esperado 1 por publicação", gravacoes)
+	}
+	if len(tu.Devolutivas) != 1 || tu.Devolutivas[0].GRR != "GRR20259001" {
+		t.Errorf("devolutivas registradas = %+v", tu.Devolutivas)
+	}
+	if res.Fora[MotivoNaoRevisada] != 2 {
+		t.Errorf("motivo %q = %d, esperado 2", MotivoNaoRevisada, res.Fora[MotivoNaoRevisada])
+	}
+}
+
+func TestRevisaoTodasNaoPerguntaDeNovo(t *testing.T) {
+	tu := turmaRevisao()
+	cli := &clienteIssues{}
+	confirmar, vistos := respostas(DecisaoTodas)
+
+	if _, err := Devolutivas(context.Background(), tu, cli, exercicioHTML(t, tu),
+		OpcoesDevolutiva{Aplicar: true, Confirmar: confirmar}, nil); err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(*vistos) != 1 {
+		t.Errorf("perguntas feitas = %d, esperado 1", len(*vistos))
+	}
+	if len(cli.criadas) != 3 {
+		t.Errorf("issues criadas = %d, esperado 3", len(cli.criadas))
+	}
+}
+
+func TestRevisaoEditarGravaOComentarioNovo(t *testing.T) {
+	tu := turmaRevisao()
+	cli := &clienteIssues{}
+	corrigido := time.Date(2026, time.September, 10, 14, 30, 0, 0, time.Local)
+	nota, _ := tu.Nota("html", "GRR20259001")
+	nota.CorrigidoEm = corrigido
+
+	perguntas := 0
+	confirmar := func(it ItemDevolutiva) (DecisaoDevolutiva, error) {
+		perguntas++
+		if it.Nome == "ANA SOUZA" && perguntas == 1 {
+			return DecisaoEditar, nil
+		}
+		return DecisaoPublicar, nil
+	}
+	editar := func(comentario string) (string, error) {
+		if strings.Contains(comentario, "@grr") || strings.Contains(comentario, "Commit avaliado") {
+			return "", fmt.Errorf("o editor recebeu o corpo inteiro, e não só o comentário: %q", comentario)
+		}
+		return "faltou o label nos campos, e o rodapé saiu fora da página\n", nil
+	}
+
+	if _, err := Devolutivas(context.Background(), tu, cli, exercicioHTML(t, tu),
+		OpcoesDevolutiva{Aplicar: true, Confirmar: confirmar, Editar: editar}, nil); err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	n, ok := tu.Nota("html", "GRR20259001")
+	if !ok {
+		t.Fatal("a nota sumiu da turma")
+	}
+	if n.Comentario != "faltou o label nos campos, e o rodapé saiu fora da página" {
+		t.Errorf("comentário gravado = %q", n.Comentario)
+	}
+	if !n.CorrigidoEm.Equal(corrigido) {
+		t.Errorf("corrigido_em mudou na edição do comentário: %v", n.CorrigidoEm)
+	}
+	if len(cli.criadas) != 3 {
+		t.Fatalf("issues criadas = %d, esperado 3", len(cli.criadas))
+	}
+	if !strings.Contains(cli.criadas[0].Corpo, "rodapé saiu fora da página") {
+		t.Errorf("a issue saiu com o texto antigo:\n%s", cli.criadas[0].Corpo)
+	}
+	d, _ := tu.Devolutiva("html", "GRR20259001")
+	if d.Desatualizada(n.Comentario) {
+		t.Error("o hash publicado não corresponde ao comentário gravado")
 	}
 }
