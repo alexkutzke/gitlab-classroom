@@ -3,6 +3,7 @@ package coleta
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,8 +19,14 @@ type clienteFalso struct {
 	meus     []gl.Grupo          // grupos com o professor associado
 	projetos map[string][]gl.Projeto
 	commits  map[string][]gl.Commit // por caminho completo do projeto
-	membros  map[string][]gl.Membro // membros por caminho completo do fork
-	erro     error
+	// commitsRef responde por ramo e por "todos", para os casos em que a
+	// resposta da API depende da ref pedida. A chave é "projeto|ramo|todos".
+	commitsRef map[string][]gl.Commit
+	// ramos lista os ramos de um projeto. Sem entrada, vale só o "main", que
+	// é o formato dos repositórios da disciplina.
+	ramos   map[string][]string
+	membros map[string][]gl.Membro // membros por caminho completo do fork
+	erro    error
 	// erroMembros imita a consulta de membros indisponível, que é a falha que
 	// desliga a descoberta de entregas em dupla.
 	erroMembros error
@@ -86,7 +93,17 @@ func (c *clienteFalso) ProjetosDoGrupo(grupo string) ([]gl.Projeto, error) {
 }
 
 func (c *clienteFalso) Commits(projeto, ramo string, todos bool) ([]gl.Commit, error) {
+	if cs, ok := c.commitsRef[fmt.Sprintf("%s|%s|%t", projeto, ramo, todos)]; ok {
+		return cs, nil
+	}
 	return c.commits[projeto], nil
+}
+
+func (c *clienteFalso) Ramos(projeto string) ([]string, error) {
+	if r, ok := c.ramos[projeto]; ok {
+		return r, nil
+	}
+	return []string{"main"}, nil
 }
 
 func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) {
@@ -231,6 +248,38 @@ func TestForkSemCommitDoAluno(t *testing.T) {
 	}
 	if e := coletarUm(t, c); e.Situacao != turma.ForkSemCommit {
 		t.Errorf("situação = %v, queria fork_sem_commit", e.Situacao)
+	}
+}
+
+// O modelo que recebeu merge request de um fork guarda
+// refs/merge-requests/<iid>/head, que aponta para os commits do aluno. Varrer
+// todas as refs do modelo apagava a entrega inteira de quem abriu o MR.
+func TestRefDeMergeRequestNoModeloNaoApagaOsCommitsDoAluno(t *testing.T) {
+	c := baseFalsa()
+	modelo := "ds122-alexkutzke/ds122-html-assignment"
+	fork := grupoAna + "/ds122-html-assignment"
+	alunos := []gl.Commit{
+		{SHA: "aluno2", Data: time.Date(2026, 9, 4, 20, 26, 0, 0, time.Local)},
+		{SHA: "aluno1", Data: time.Date(2026, 9, 3, 15, 0, 0, 0, time.Local)},
+	}
+	modeloCommits := c.commits[modelo]
+	c.commits[fork] = append(append([]gl.Commit{}, alunos...), modeloCommits...)
+	// Com todos=true a API devolve o que veio pelas refs do merge request,
+	// ou seja, os commits do aluno junto com os do modelo.
+	c.commitsRef = map[string][]gl.Commit{
+		fmt.Sprintf("%s||%t", modelo, true): append(append([]gl.Commit{}, modeloCommits...), alunos...),
+	}
+
+	e := coletarUm(t, c)
+
+	if e.Situacao != turma.Entregue {
+		t.Errorf("situação = %v, queria entregue", e.Situacao)
+	}
+	if e.Commits != 2 {
+		t.Errorf("commits do aluno = %d, queria 2", e.Commits)
+	}
+	if e.Commit != "aluno2" {
+		t.Errorf("commit avaliado = %q, queria aluno2", e.Commit)
 	}
 }
 

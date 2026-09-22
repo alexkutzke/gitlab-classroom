@@ -83,6 +83,10 @@ type Cliente interface {
 	// Commits lista os commits de um projeto. Ramo vazio usa o ramo padrão;
 	// todos inclui os commits de qualquer ramo.
 	Commits(projeto string, ramo string, todos bool) ([]Commit, error)
+	// Ramos lista os ramos de um projeto. Serve para varrer o histórico do
+	// repositório-modelo sem passar pelas refs de merge request, que trazem
+	// commits de fork de aluno para dentro do modelo.
+	Ramos(projeto string) ([]string, error)
 	// Membros lista quem está associado a um projeto, herança de grupo
 	// incluída.
 	Membros(projeto string) ([]Membro, error)
@@ -117,6 +121,7 @@ type clienteAPI struct {
 	grupos   *cache[[]Grupo]
 	projetos *cache[[]Projeto]
 	commits  *cache[[]Commit]
+	ramos    *cache[[]string]
 	membros  *cache[[]Membro]
 }
 
@@ -125,6 +130,7 @@ func (g *clienteAPI) Renovar() {
 	g.grupos.limpar()
 	g.projetos.limpar()
 	g.commits.limpar()
+	g.ramos.limpar()
 	g.membros.limpar()
 }
 
@@ -146,6 +152,7 @@ func Novo(host, token string) (Cliente, error) {
 		grupos:   novoCache[[]Grupo](),
 		projetos: novoCache[[]Projeto](),
 		commits:  novoCache[[]Commit](),
+		ramos:    novoCache[[]string](),
 		membros:  novoCache[[]Membro](),
 	}, nil
 }
@@ -295,6 +302,31 @@ func (g *clienteAPI) Commits(projeto, ramo string, todos bool) ([]Commit, error)
 			}
 			for _, c := range cs {
 				out = append(out, converterCommit(c))
+			}
+			if resp == nil || resp.NextPage == 0 {
+				break
+			}
+			opt.Page = resp.NextPage
+		}
+		return out, nil
+	})
+}
+
+func (g *clienteAPI) Ramos(projeto string) ([]string, error) {
+	return g.ramos.obter(projeto, func() ([]string, error) {
+		var out []string
+		opt := &api.ListBranchesOptions{ListOptions: api.ListOptions{PerPage: porPagina, Page: 1}}
+		for {
+			bs, resp, err := g.c.Branches.ListBranches(projeto, opt)
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					// Repositório vazio devolve 404 no lugar de lista vazia.
+					return nil, nil
+				}
+				return nil, traduzirErro(err, "listando os ramos de "+projeto)
+			}
+			for _, b := range bs {
+				out = append(out, b.Name)
 			}
 			if resp == nil || resp.NextPage == 0 {
 				break

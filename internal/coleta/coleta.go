@@ -608,15 +608,26 @@ func (c *Coletor) coletarNoProjeto(a turma.Aluno, e turma.Exercicio, p gl.Projet
 // Comparar com o modelo é mais confiável que filtrar por nome do autor, que
 // era o que os scripts antigos faziam: o aluno que deixa o git configurado com
 // outro nome, ou o modelo que recebeu commit de terceiro, quebravam o filtro.
+//
+// A varredura é por ramo, e não por todas as refs. O modelo que recebeu merge
+// request guarda refs/merge-requests/<iid>/head e /merge, que apontam para os
+// commits do fork de origem: contá-las como do modelo apagava o histórico
+// inteiro do aluno que abriu o MR, e a entrega virava fork_sem_commit.
 func (c *Coletor) shasDoModelo(e turma.Exercicio) (map[string]bool, error) {
 	caminho := c.Config.CaminhoModelo(e.Repo)
-	commits, err := c.Cliente.Commits(caminho, "", true)
+	ramos, err := c.Cliente.Ramos(caminho)
 	if err != nil {
 		return nil, err
 	}
-	m := make(map[string]bool, len(commits))
-	for _, cm := range commits {
-		m[cm.SHA] = true
+	m := map[string]bool{}
+	for _, ramo := range ramos {
+		commits, err := c.Cliente.Commits(caminho, ramo, false)
+		if err != nil {
+			return nil, err
+		}
+		for _, cm := range commits {
+			m[cm.SHA] = true
+		}
 	}
 	return m, nil
 }

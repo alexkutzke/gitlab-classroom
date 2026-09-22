@@ -60,6 +60,10 @@ func (c *clienteFalso) Commits(projeto, ramo string, todos bool) ([]gl.Commit, e
 	return c.commits[projeto], nil
 }
 
+func (c *clienteFalso) Ramos(projeto string) ([]string, error) {
+	return []string{"main"}, nil
+}
+
 func (c *clienteFalso) Membros(projeto string) ([]gl.Membro, error) {
 	return c.membros[projeto], nil
 }
