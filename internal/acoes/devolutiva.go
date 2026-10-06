@@ -303,10 +303,37 @@ func alunosDaRodada(t *turma.Turma, grrs []string) ([]turma.Aluno, error) {
 
 // planejarDevolutivas decide o que fazer com cada aluno de um exercício.
 //
+// O plano sai de planejarDevolutivasLocal, e o GitLab só é consultado para o
+// fork sem registro em devolutivas.csv, que pode ter a issue mesmo assim.
+func planejarDevolutivas(t *turma.Turma, cli gl.Cliente, e turma.Exercicio, alunos []turma.Aluno, o OpcoesDevolutiva) ([]ItemDevolutiva, error) {
+	itens := planejarDevolutivasLocal(t, e, alunos, o)
+	for i := range itens {
+		if itens[i].Acao != DevolutivaCriar {
+			continue
+		}
+		// Sem linha no arquivo: a issue pode existir assim mesmo, criada à
+		// mão ou por uma rodada cujo arquivo se perdeu. Publicar de novo
+		// mandaria a mesma devolutiva duas vezes.
+		issues, err := cli.IssuesDoProjeto(itens[i].Projeto)
+		if err != nil {
+			return nil, err
+		}
+		if existente, achou := acharIssue(issues, itens[i].Titulo); achou {
+			itens[i].Acao = DevolutivaReconhecer
+			itens[i].Issue, itens[i].URL = existente.IID, existente.URL
+		}
+	}
+	return itens, nil
+}
+
+// planejarDevolutivasLocal é a parte do plano que só lê .classroom/. O fork
+// sem registro de publicação sai como DevolutivaCriar, e cabe a quem tem o
+// cliente do GitLab conferir se a issue já existe.
+//
 // A decisão é por fork, e não por aluno: na entrega em dupla os dois leem a
 // mesma issue, e abrir uma para cada seria mandar a devolutiva duas vezes
 // para o mesmo repositório.
-func planejarDevolutivas(t *turma.Turma, cli gl.Cliente, e turma.Exercicio, alunos []turma.Aluno, o OpcoesDevolutiva) ([]ItemDevolutiva, error) {
+func planejarDevolutivasLocal(t *turma.Turma, e turma.Exercicio, alunos []turma.Aluno, o OpcoesDevolutiva) []ItemDevolutiva {
 	var itens []ItemDevolutiva
 	// projetos guarda a posição, em itens, do aluno que representa cada fork
 	// já visto.
@@ -365,23 +392,27 @@ func planejarDevolutivas(t *turma.Turma, cli gl.Cliente, e turma.Exercicio, alun
 			continue
 		}
 
-		// Sem linha no arquivo: a issue pode existir assim mesmo, criada à
-		// mão ou por uma rodada cujo arquivo se perdeu. Publicar de novo
-		// mandaria a mesma devolutiva duas vezes.
-		issues, err := cli.IssuesDoProjeto(projeto)
-		if err != nil {
-			return nil, err
-		}
-		if existente, achou := acharIssue(issues, it.Titulo); achou {
-			it.Acao = DevolutivaReconhecer
-			it.Issue, it.URL = existente.IID, existente.URL
-		} else {
-			it.Acao = DevolutivaCriar
-		}
+		it.Acao = DevolutivaCriar
 		projetos[projeto] = len(itens)
 		itens = append(itens, it)
 	}
-	return itens, nil
+	return itens
+}
+
+// devolutivasPendentes conta os forks cuja devolutiva `classroom devolutiva`
+// apontaria como a publicar ou como desatualizada.
+//
+// Conta fork, e não aluno: a entrega em dupla recebe uma issue só. Sem
+// consultar o GitLab, a issue aberta à mão e ausente do arquivo conta como
+// pendente, e a rodada seguinte a reconhece sem publicar.
+func devolutivasPendentes(t *turma.Turma, e turma.Exercicio, alunos []turma.Aluno) int {
+	n := 0
+	for _, it := range planejarDevolutivasLocal(t, e, alunos, OpcoesDevolutiva{}) {
+		if it.Acao == DevolutivaCriar || it.Motivo == MotivoDesatualizada {
+			n++
+		}
+	}
+	return n
 }
 
 // aplicarDevolutiva executa a ação no GitLab e registra o resultado na turma.

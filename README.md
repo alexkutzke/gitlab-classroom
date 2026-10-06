@@ -216,7 +216,16 @@ lançadas**: são arquivos separados justamente por isso.
 classroom status              # panorama: cadastro pendente e cada exercício
 classroom alunos              # o cadastro, com grupo e situação da conta
 classroom alunos silva        # busca por nome, GRR ou e-mail
+classroom resumo              # contagens por exercício, uma linha cada
+classroom resumo --json       # as mesmas contagens, no contrato que o painel lê
 ```
+
+`resumo` lê só o `.classroom/`, sem consultar o GitLab. Por exercício ativo,
+traz as entregas no prazo, as atrasadas, as sem entrega e os erros de coleta,
+quantas foram corrigidas, quantas esperam correção, as verificações feitas
+sobre commit antigo e as devolutivas por publicar, contadas por fork. No topo
+vêm o instante da coleta mais recente e o cadastro pendente. A saída em JSON
+é a que o `painel` usa, e o formato está em `internal/cli/testdata/resumo.golden.json`.
 
 ### Baixar os forks para corrigir
 

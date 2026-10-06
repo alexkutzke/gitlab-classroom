@@ -1,0 +1,5 @@
+id;repo;titulo;prazo;peso;ordem;verificacao;imagem;categoria;situacao
+antigo;ds122-antigo-assignment;Exercício antigo;2026-08-20;1;;;;;arquivado
+html;ds122-html-assignment;HTML e formulários;2026-09-05;1;;./verificar.sh;;;ativo
+css;ds122-css-assignment;CSS e seletores;2026-09-19;2;;./verificar.sh;;;ativo
+trabalho-1;ds122-trabalho;Trabalho, parte 1;2026-10-03;30;;;;trabalho;ativo

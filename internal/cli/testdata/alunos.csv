@@ -1,0 +1,9 @@
+grr;nome;email;usuario;grupo;situacao;situacao_conta;verificado_em;observacao
+GRR20259001;ANA SOUZA;ana@exemplo.edu;grr20259001;ds122-2026-2-n-grr20259001;ativo;ok;2026-10-01T10:00:00-03:00;
+GRR20259002;BETO LIMA;beto@exemplo.edu;grr20259002;ds122-2026-2-n-grr20259002;ativo;ok;2026-10-01T10:00:00-03:00;
+GRR20259003;CARLA DIAS;carla@exemplo.edu;;;ativo;sem_conta;2026-10-01T10:00:00-03:00;
+GRR20259004;DANI ROCHA;dani@exemplo.edu;grr20259004;ds122-noturno-dani;ativo;grupo_divergente;2026-10-01T10:00:00-03:00;
+GRR20259005;EDU MATOS;edu@exemplo.edu;grr20259005;ds122-2026-2-n-grr20259005;ativo;sem_acesso;2026-10-01T10:00:00-03:00;
+GRR20259006;FABI NUNES;fabi@exemplo.edu;grr20259006;;ativo;grupo_invisivel;2026-10-01T10:00:00-03:00;
+GRR20259007;GABI PRADO;gabi@exemplo.edu;;;ativo;;;
+GRR20259008;HUGO REIS;hugo@exemplo.edu;grr20259008;ds122-2026-2-n-grr20259008;cancelado;ok;2026-10-01T10:00:00-03:00;

@@ -1,0 +1,60 @@
+{
+  "versao": 1,
+  "gerado_em": "2026-10-06T14:00:00-03:00",
+  "coletado_em": "2026-10-04T09:12:00-03:00",
+  "cadastro": {
+    "ativos": 7,
+    "sem_conta": 1,
+    "sem_acesso": 1,
+    "grupo_invisivel": 1,
+    "grupo_divergente": 1,
+    "sem_reconciliacao": 1
+  },
+  "exercicios": [
+    {
+      "id": "html",
+      "titulo": "HTML e formulários",
+      "categoria": "exercicio",
+      "prazo": "2026-09-05",
+      "peso": 1,
+      "entregues": 3,
+      "atrasadas": 1,
+      "sem_entrega": 1,
+      "erros": 0,
+      "corrigidas": 3,
+      "por_corrigir": 1,
+      "verificacoes_desatualizadas": 1,
+      "devolutivas_pendentes": 1
+    },
+    {
+      "id": "css",
+      "titulo": "CSS e seletores",
+      "categoria": "exercicio",
+      "prazo": "2026-09-19",
+      "peso": 2,
+      "entregues": 3,
+      "atrasadas": 0,
+      "sem_entrega": 1,
+      "erros": 1,
+      "corrigidas": 2,
+      "por_corrigir": 1,
+      "verificacoes_desatualizadas": 0,
+      "devolutivas_pendentes": 1
+    },
+    {
+      "id": "trabalho-1",
+      "titulo": "Trabalho, parte 1",
+      "categoria": "trabalho",
+      "prazo": "2026-10-03",
+      "peso": 30,
+      "entregues": 0,
+      "atrasadas": 0,
+      "sem_entrega": 0,
+      "erros": 0,
+      "corrigidas": 0,
+      "por_corrigir": 0,
+      "verificacoes_desatualizadas": 0,
+      "devolutivas_pendentes": 0
+    }
+  ]
+}

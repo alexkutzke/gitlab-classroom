@@ -195,6 +195,7 @@ resolve.
 | `classroom relatorio` | tabela de entregas em markdown, para o professor ou para o material |
 | `classroom clonar` | baixa os forks e posiciona cada clone no commit avaliado |
 | `classroom abrir` | abre o clone no editor, ou o projeto no navegador |
+| `classroom resumo` | as contagens do `status` por exercício; `--json` imprime o contrato que o `painel` lê |
 | `classroom verificar` | roda a suíte do exercício sobre os clones, em contêiner |
 | `classroom corrigir` | interface interativa de correção |
 | `classroom devolutiva` | publica o comentário da correção como issue no fork do aluno |
@@ -296,6 +297,32 @@ Decisões que o código respeita:
 
 - **a issue não leva nota**, nem no título nem no corpo. A nota vive no
   `diario` e no UFPR Virtual, e um segundo lugar teria de acompanhar toda
+## Resumo para o painel
+
+`classroom resumo --json` é a fronteira com o `painel`
+(`~/Documents/work/dev/painel`), que mostra o semestre inteiro e não pode
+importar os pacotes `internal/` deste módulo. A especificação está em
+`docs/spec_classroom_resumo.md`, e a referência do contrato passou a ser este
+repositório: o `painel` lê, e quem muda o formato é o `classroom`.
+
+- o cálculo é `acoes.ResumoDe`, função pura sobre a turma. As contagens por
+  exercício saem de `PanoramaDe`, e nenhuma regra nova entra ali: definição
+  que pareça pedir regra própria está errada na especificação;
+- `devolutivas_pendentes` sai de `planejarDevolutivasLocal`, a parte do plano
+  da devolutiva que não consulta o GitLab, e conta fork, e não aluno. A issue
+  aberta à mão e ausente de `devolutivas.csv` conta como pendente;
+- `coletado_em` é o maior `ColetadoEm` de `entregas.csv`, e não a data do
+  arquivo, que muda com a sincronização da pasta;
+- nenhum campo depende da data do dia, e por isso não há `--hoje`;
+- `VersaoResumo` muda quando um campo existente muda de sentido ou some.
+  Campo novo não muda a versão. `internal/cli/testdata/resumo.golden.json` é
+  o arquivo que o `painel` copia para os testes dele, e `go test ./internal/cli
+  -run Dourado -atualizar` o regrava.
+
+A turma fictícia do teste fica solta em `internal/cli/testdata`, e não dentro
+de um `.classroom/`, porque o `.gitignore` bloqueia esse nome e todo `*.csv`
+fora de `internal/*/testdata/`.
+
   recorreção;
 - **o ensaio é o padrão.** Sem `--aplicar`, nada é enviado ao GitLab. Com
   `--texto`, o ensaio mostra o corpo de cada aluno em vez da tabela, e o corpo

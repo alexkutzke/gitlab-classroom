@@ -1,0 +1,4 @@
+exercicio;grr;situacao;aprovados;total;commit;duracao_ms;executado_em;detalhe
+html;GRR20259001;aprovado;10;10;a0b0c0d0e0f0;1200;2026-09-06T10:00:00-03:00;
+html;GRR20259004;reprovado;7;10;d1d1d1d1d1d1;1100;2026-09-06T10:00:00-03:00;
+css;GRR20259005;aprovado;5;5;e2e2e2e2e2e2;900;2026-10-04T10:00:00-03:00;

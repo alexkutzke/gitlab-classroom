@@ -1,0 +1,7 @@
+exercicio;grr;nota;comentario;corrigido_em
+html;GRR20259001;80;faltou o label nos campos do formulário;2026-09-20T15:00:00-03:00
+html;GRR20259002;80;faltou o label nos campos do formulário;2026-09-20T15:00:00-03:00
+html;GRR20259005;50;;2026-09-20T15:10:00-03:00
+html;GRR20259008;90;bom trabalho;2026-09-20T15:20:00-03:00
+css;GRR20259001;90;faltou o seletor de classe no menu;2026-10-02T14:00:00-03:00
+css;GRR20259002;70;o menu não usa flexbox, como o enunciado pede;2026-10-02T14:10:00-03:00
