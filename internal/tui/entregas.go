@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
+	"github.com/alexkutzke/gitlab-classroom/internal/moldura"
 	"github.com/alexkutzke/gitlab-classroom/internal/repo"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
@@ -140,11 +141,11 @@ func (te *telaEntregas) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	case "up", "k":
 		te.cursor = max(0, te.cursor-1)
 	case "down", "j":
-		te.cursor = min(len(linhas)-1, te.cursor+1)
+		te.cursor = max(0, min(len(linhas)-1, te.cursor+1))
 	case "pgup":
 		te.cursor = max(0, te.cursor-a.linhasDisponiveis())
 	case "pgdown":
-		te.cursor = min(len(linhas)-1, te.cursor+a.linhasDisponiveis())
+		te.cursor = max(0, min(len(linhas)-1, te.cursor+a.linhasDisponiveis()))
 	case "home", "g":
 		te.cursor = 0
 	case "end", "G":
@@ -184,8 +185,6 @@ func (te *telaEntregas) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		te.vinculando = &l.Aluno
-		a.avisar("escolha com enter o dono do fork onde %s entregou; esc cancela",
-			l.Aluno.Nome)
 	case "X":
 		l, ok := linhaAtual(linhas, te.cursor)
 		if !ok {
@@ -312,93 +311,106 @@ func linhaAtual(linhas []linhaEntrega, cursor int) (linhaEntrega, bool) {
 	return linhas[cursor], true
 }
 
-func (te *telaEntregas) atalhos() string {
-	if te.vinculando != nil {
-		return estAtencao.Render("escolha o dono do fork com enter · esc cancela")
+func (te *telaEntregas) digitando() bool { return te.modoFiltro }
+
+// entrada mostra o filtro sendo digitado ou a pergunta do vínculo.
+func (te *telaEntregas) entrada(a *App) string {
+	switch {
+	case te.modoFiltro:
+		return estAcento.Render("filtro: ") + te.buffer + "_   " +
+			estTecla.Render("enter") + " " + estFraco.Render("aplica") + "   " +
+			estTecla.Render("esc") + " " + estFraco.Render("limpa")
+	case te.vinculando != nil:
+		return estAtencao.Render("escolha o dono do fork onde "+te.vinculando.Nome+" entregou") + "   " +
+			estTecla.Render("enter") + " " + estFraco.Render("escolhe") + "   " +
+			estTecla.Render("esc") + " " + estFraco.Render("cancela")
 	}
-	return "n corrige · c coleta · l clona · v verifica · o editor · w GitLab · V vincula · s ordem · / filtra"
+	return ""
 }
 
-func (te *telaEntregas) desenhar(a *App) string {
+func (te *telaEntregas) teclas(a *App) []moldura.Tecla {
+	if a.focoAtual() == focoDetalhe {
+		return append(teclasDoDetalhe(), a.teclasComuns()...)
+	}
+	r := []moldura.Tecla{
+		{K: "tab", Rotulo: "painel"}, {K: "n", Rotulo: "corrige"}, {K: "c", Rotulo: "coleta"},
+		{K: "l", Rotulo: "clona"}, {K: "v", Rotulo: "verifica"}, {K: "o", Rotulo: "editor"},
+		{K: "w", Rotulo: "GitLab"}, {K: "V", Rotulo: "vincula"}, {K: "s", Rotulo: "ordem"},
+		{K: "/", Rotulo: "filtra"},
+	}
+	return append(r, a.teclasComuns()...)
+}
+
+// lista é o painel [1]: os alunos ativos, com a marca d da entrega em dupla.
+func (te *telaEntregas) painelLista(a *App) (string, moldura.Conteudo) {
 	e, ok := a.exercicioAberto()
 	if !ok {
-		return estErro.Render("exercício não encontrado")
+		return "Entregas", moldura.Conteudo{Sel: -1,
+			Linhas: []string{estErro.Render(" exercício não encontrado")}}
 	}
-
-	var b strings.Builder
-	cabecalho := fmt.Sprintf("%s  prazo %s  peso %g", e.Titulo, e.Prazo.String(), e.Peso)
-	if e.TemSuite() {
-		cabecalho += estFraco.Render("  suíte: " + e.Verificacao)
-	}
-	b.WriteString(estTitulo.Render(cabecalho) + "\n")
-	if te.modoFiltro {
-		b.WriteString(estDestaque.Render("filtro: ") + te.buffer + "_\n")
-	} else if te.filtro != "" {
-		b.WriteString(estDestaque.Render("filtro: "+te.filtro) + estFraco.Render("  (/ muda, esc limpa)") + "\n")
-	} else {
-		b.WriteString(estFraco.Render(fmt.Sprintf("ordem por %s", te.ordem)) + "\n")
-	}
-	b.WriteString("\n")
-
 	linhas := te.linhas(a)
+	total := len(a.turma.Ativos())
+	titulo := fmt.Sprintf("Entregas · %s (%d)", e.ID, total)
+	if te.filtro != "" {
+		titulo = fmt.Sprintf("Entregas · %s (%d de %d, filtro %q)", e.ID, len(linhas), total, te.filtro)
+	}
+	if te.ordem != ordemNome {
+		titulo += " · ordem por " + te.ordem.String()
+	}
 	if len(linhas) == 0 {
-		b.WriteString(estFraco.Render("  nenhum aluno com esse filtro") + "\n")
-		return b.String()
+		return titulo, moldura.Conteudo{Sel: -1,
+			Linhas: []string{estFraco.Render(" nenhum aluno com esse filtro")}}
 	}
 
-	altura := a.linhasDisponiveis() - 2
-	if te.cursor >= len(linhas) {
-		te.cursor = len(linhas) - 1
+	cab := []moldura.Celula{moldura.Cel(" ", estFraco), moldura.Cel("aluno", estFraco),
+		moldura.Cel("situação", estFraco), moldura.Num("commits", estFraco),
+		moldura.Num("atraso", estFraco), moldura.Cel("verif", estFraco), moldura.Num("nota", estFraco)}
+	var celulas [][]moldura.Celula
+	for _, l := range linhas {
+		marca := moldura.Cel(" ", estFraco)
+		if len(l.Equipe) > 0 {
+			marca = moldura.Cel("d", estFraco)
+		}
+		situacao := moldura.Cel("sem coleta", estFraco)
+		if s := l.Entrega.Situacao; s != "" {
+			texto := s.Rotulo()
+			if s == turma.Entregue && l.Entrega.TemAtraso() {
+				texto += fmt.Sprintf(" (+%dd)", l.Entrega.AtrasoDias)
+			}
+			situacao = moldura.Cel(texto, corDaSituacao(s))
+		}
+		commits := moldura.Num("-", estFraco)
+		if l.Entrega.Commits > 0 {
+			commits = moldura.Num(fmt.Sprint(l.Entrega.Commits), estNormal)
+		}
+		atraso := moldura.Num("-", estFraco)
+		if l.Entrega.TemAtraso() {
+			atraso = moldura.Num(fmt.Sprintf("%dd", l.Entrega.AtrasoDias), estAtencao)
+		}
+		verif, estVerif := textoDaVerificacao(l.Verificacao, l.Entrega.Commit)
+		nota := moldura.Num("-", estFraco)
+		if l.Nota != nil {
+			nota = moldura.Num(fmt.Sprintf("%g", l.Nota.Valor), estAcento)
+		}
+		celulas = append(celulas, []moldura.Celula{marca,
+			moldura.Cel(truncar(l.Aluno.Nome, 30), estNormal), situacao, commits, atraso,
+			moldura.Cel(verif, estVerif), nota})
 	}
-	te.topo = janela(te.topo, te.cursor, altura, len(linhas))
-	fim := min(te.topo+altura, len(linhas))
-
-	for i := te.topo; i < fim; i++ {
-		b.WriteString(te.linha(linhas[i], i == te.cursor) + "\n")
+	te.cursor = max(0, min(te.cursor, len(linhas)-1))
+	return titulo, moldura.Conteudo{
+		Linhas: moldura.Tabela(cab, celulas),
+		Sel:    1 + te.cursor,
+		Info:   fmt.Sprintf("%d de %d", te.cursor+1, len(linhas)),
 	}
-	if len(linhas) > altura {
-		b.WriteString(rolagem(te.topo, fim, len(linhas)) + "\n")
-	}
-	return b.String()
 }
 
-func (te *telaEntregas) linha(l linhaEntrega, sob bool) string {
-	cursor := "  "
-	nome := truncar(l.Aluno.Nome, 30)
-	if sob {
-		cursor = estCursor.Render("> ")
-		nome = estCursor.Render(nome)
+// detalhe é o painel [2]: a entrega do aluno selecionado, que segue o
+// cursor sem precisar de enter.
+func (te *telaEntregas) detalhe(a *App, largura int) (string, moldura.Conteudo) {
+	e, ok := a.exercicioAberto()
+	l, temLinha := linhaAtual(te.linhas(a), te.cursor)
+	if !ok || !temLinha {
+		return "Detalhe", moldura.Conteudo{Sel: -1, Linhas: []string{estFraco.Render(" nada selecionado")}}
 	}
-
-	marca := " "
-	if len(l.Equipe) > 0 {
-		marca = estFraco.Render("d")
-	}
-
-	situacao := estFraco.Render("sem coleta")
-	if l.Entrega.Situacao != "" {
-		situacao = corDaSituacao(l.Entrega.Situacao).Render(l.Entrega.Descricao())
-	}
-
-	commits := ""
-	if l.Entrega.Commits > 0 {
-		commits = estFraco.Render(fmt.Sprintf("%d commits", l.Entrega.Commits))
-	}
-
-	verificacao := ""
-	if v := l.Verificacao; v.Situacao != "" && v.Situacao != turma.SemSuite {
-		texto := v.Resumo()
-		if v.Desatualizada(l.Entrega.Commit) {
-			texto += " !"
-		}
-		verificacao = corDaVerificacao(v.Situacao).Render(texto)
-	}
-
-	nota := estFraco.Render("   -")
-	if l.Nota != nil {
-		nota = estDestaque.Render(fmt.Sprintf("%4g", l.Nota.Valor))
-	}
-
-	return cursor + marca + " " + preencher(nome, 31) + preencher(situacao, 30) +
-		preencher(commits, 12) + preencher(verificacao, 20) + nota
+	return l.Aluno.Nome, detalheDaEntrega(a, e, l, largura).conteudo()
 }

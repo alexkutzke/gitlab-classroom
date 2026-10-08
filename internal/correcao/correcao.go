@@ -10,21 +10,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/moldura"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
-)
-
-var (
-	estTitulo   = lipgloss.NewStyle().Bold(true)
-	estFraco    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	estEntregue = lipgloss.NewStyle().Foreground(lipgloss.Color("35"))
-	estAtraso   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	estFalta    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	estNota     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-	estCursor   = lipgloss.NewStyle().Bold(true)
-	estFiltro   = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	estAviso    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
 
 // Item é uma linha da correção: o aluno, o que a coleta apurou e a nota que
@@ -40,6 +28,10 @@ type Item struct {
 	Dir string
 	// Equipe traz os demais integrantes da entrega, quando há.
 	Equipe []string
+	// Devolutiva é a issue já publicada para esta entrega, se houver. O
+	// detalhe a compara com o comentário em edição para dizer se ela ficou
+	// desatualizada.
+	Devolutiva *turma.Devolutiva
 
 	nota       float64
 	temNota    bool
@@ -83,9 +75,17 @@ type modelo struct {
 	visivel []int
 
 	cursor  int
-	topo    int
 	altura  int
 	largura int
+
+	// foco é o painel em foco: 0 a lista, 1 o detalhe. topoDet é a rolagem
+	// do detalhe, que volta ao topo quando o cursor muda de aluno.
+	foco    int
+	topoDet int
+	ajuda   bool
+	// anuncio vai à direita da barra de título. A interface usa para mostrar
+	// a tarefa em curso, que fica à vista em qualquer tela.
+	anuncio string
 
 	modo   modo
 	buffer string
@@ -119,7 +119,7 @@ func Executar(o Opcoes) (Resultado, error) {
 	}
 	s.m.autonomo = true
 
-	saida, err := tea.NewProgram(s.m).Run()
+	saida, err := tea.NewProgram(s.m, tea.WithAltScreen()).Run()
 	if err != nil {
 		return Resultado{}, err
 	}
@@ -143,8 +143,8 @@ func Nova(o Opcoes) (*Sessao, error) {
 		notaMaxima: o.NotaMaxima,
 		itens:      o.Itens,
 		propagar:   o.Propagar,
-		altura:     20,
-		largura:    100,
+		altura:     moldura.AlturaPadrao,
+		largura:    moldura.LarguraPadrao,
 	}
 	m.filtrar()
 	return &Sessao{m: m}, nil
@@ -156,10 +156,15 @@ func (s *Sessao) Atualizar(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-// Dimensionar informa o tamanho disponível na tela de quem hospeda.
+// Dimensionar informa o tamanho da tela. A correção ocupa o terminal
+// inteiro, com as próprias barras de título e de teclas.
 func (s *Sessao) Dimensionar(largura, altura int) {
-	s.m.largura, s.m.altura = largura, max(5, altura)
+	s.m.largura, s.m.altura = largura, altura
 }
+
+// Anunciar põe um texto à direita da barra de título, como o andamento de
+// uma tarefa da interface que hospeda a correção.
+func (s *Sessao) Anunciar(texto string) { s.m.anuncio = texto }
 
 // View desenha a correção.
 func (s *Sessao) View() string { return s.m.View() }
@@ -223,8 +228,7 @@ func (m *modelo) atual() *Item {
 func (m *modelo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.largura = msg.Width
-		m.altura = max(5, msg.Height-9)
+		m.largura, m.altura = msg.Width, msg.Height
 		return m, nil
 	case erroAbertura:
 		if msg.err != nil {
@@ -247,8 +251,28 @@ func (m *modelo) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *modelo) teclaNavegacao(msg tea.KeyMsg) tea.Cmd {
 	m.aviso = ""
+	// A tecla que fecha a ajuda não age por baixo dela.
+	if m.ajuda {
+		m.ajuda = false
+		return nil
+	}
+	if m.foco == 1 && m.rolarDetalhe(msg.String()) {
+		return nil
+	}
 	switch msg.String() {
-	case "q", "esc", "ctrl+c":
+	case "?":
+		m.ajuda = true
+	case "tab", "shift+tab":
+		m.foco = 1 - m.foco
+	case "esc":
+		// Com o foco no detalhe, esc devolve o foco à lista; na lista, sai
+		// sem gravar, como sempre.
+		if m.foco == 1 {
+			m.foco = 0
+			return nil
+		}
+		return m.encerrar(false)
+	case "q", "ctrl+c":
 		return m.encerrar(false)
 	case "enter":
 		return m.encerrar(true)
@@ -257,15 +281,13 @@ func (m *modelo) teclaNavegacao(msg tea.KeyMsg) tea.Cmd {
 	case "down", "j":
 		m.mover(1)
 	case "pgup":
-		m.mover(-m.altura)
+		m.mover(-m.linhasVisiveis())
 	case "pgdown":
-		m.mover(m.altura)
+		m.mover(m.linhasVisiveis())
 	case "home", "g":
-		m.cursor = 0
-		m.ajustarJanela()
+		m.mover(-len(m.visivel))
 	case "end", "G":
-		m.cursor = max(0, len(m.visivel)-1)
-		m.ajustarJanela()
+		m.mover(len(m.visivel))
 	case "/":
 		m.modo = digitandoFiltro
 		m.buffer = m.filtro
@@ -509,19 +531,34 @@ func (m *modelo) mover(delta int) {
 		return
 	}
 	m.cursor = min(max(0, m.cursor+delta), len(m.visivel)-1)
-	m.ajustarJanela()
+	// O detalhe segue o cursor, e o aluno novo começa do topo.
+	m.topoDet = 0
 }
 
-func (m *modelo) ajustarJanela() {
-	if m.cursor < m.topo {
-		m.topo = m.cursor
+// rolarDetalhe move o detalhe em foco; devolve false para as teclas que não
+// são de rolagem, como as de nota, que continuam valendo daqui.
+func (m *modelo) rolarDetalhe(tecla string) bool {
+	w, h := m.retanguloDetalhe()
+	visiveis := max(1, h-2)
+	limite := max(0, len(m.linhasDetalhe(w))-visiveis)
+	switch tecla {
+	case "down", "j":
+		m.topoDet++
+	case "up", "k":
+		m.topoDet--
+	case "pgdown":
+		m.topoDet += visiveis
+	case "pgup":
+		m.topoDet -= visiveis
+	case "home", "g":
+		m.topoDet = 0
+	case "end", "G":
+		m.topoDet = limite
+	default:
+		return false
 	}
-	if m.cursor >= m.topo+m.altura {
-		m.topo = m.cursor - m.altura + 1
-	}
-	if m.topo < 0 {
-		m.topo = 0
-	}
+	m.topoDet = max(0, min(m.topoDet, limite))
+	return true
 }
 
 func formatarNota(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }

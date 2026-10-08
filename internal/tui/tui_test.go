@@ -163,7 +163,6 @@ func TestTrocaDeTelasPorAtalho(t *testing.T) {
 		{"a", idAlunos},
 		{"e", idEquipes},
 		{"t", idTarefas},
-		{"?", idAjuda},
 		{"p", idPainel},
 	}
 	for _, c := range casos {

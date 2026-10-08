@@ -2,22 +2,25 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/moldura"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
+// Os estilos vêm da moldura, que é a mesma do painel e da correção. Os nomes
+// curtos ficam aqui só para o desenho das telas não repetir o pacote a cada
+// célula.
 var (
-	estTitulo   = lipgloss.NewStyle().Bold(true)
-	estFraco    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	estCursor   = lipgloss.NewStyle().Bold(true)
-	estOK       = lipgloss.NewStyle().Foreground(lipgloss.Color("35"))
-	estAtencao  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	estErro     = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	estAviso    = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	estDestaque = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	estNormal  = moldura.EstNormal
+	estFraco   = moldura.EstFraco
+	estOK      = moldura.EstOK
+	estAtencao = moldura.EstAtencao
+	estErro    = moldura.EstErro
+	estAcento  = moldura.EstAcento
+	estSecao   = moldura.EstSecao
+	estTecla   = moldura.EstTecla
 )
 
 // corDaSituacao escolhe a cor pela gravidade da situação da entrega.
@@ -33,35 +36,53 @@ func corDaSituacao(s turma.SituacaoEntrega) lipgloss.Style {
 	return estErro
 }
 
+// simboloDaSituacao acompanha a cor: em dia, atenção ou falta.
+func simboloDaSituacao(s turma.SituacaoEntrega) string {
+	switch s {
+	case turma.Entregue:
+		return "✓"
+	case turma.SemCommitNoPrazo, turma.ForkSemCommit:
+		return "▲"
+	case "":
+		return "·"
+	}
+	return "✖"
+}
+
 // corDaVerificacao escolhe a cor pelo veredito da suíte.
 func corDaVerificacao(s turma.SituacaoVerificacao) lipgloss.Style {
 	switch s {
 	case turma.Aprovado:
 		return estOK
-	case turma.Reprovado:
+	case turma.Reprovado, turma.ErroVerificacao:
 		return estErro
 	}
 	return estFraco
 }
 
-// janela devolve o novo topo da lista para manter o cursor visível.
-func janela(topo, cursor, linhas, total int) int {
-	if linhas <= 0 || total == 0 {
-		return 0
+// textoDaVerificacao resume a suíte numa célula: símbolo do veredito e a
+// contagem. Resultado apurado sobre commit anterior ao da entrega leva ▲, a
+// mesma condição que a tela de correção marca.
+func textoDaVerificacao(v turma.Verificacao, commitDaEntrega string) (string, lipgloss.Style) {
+	if v.Situacao == "" || v.Situacao == turma.SemSuite {
+		return "-", estFraco
 	}
-	if cursor < topo {
-		topo = cursor
+	cont := ""
+	if v.Total > 0 {
+		cont = fmt.Sprintf(" %d/%d", v.Aprovados, v.Total)
 	}
-	if cursor >= topo+linhas {
-		topo = cursor - linhas + 1
+	if v.Desatualizada(commitDaEntrega) {
+		return "▲" + cont, estAtencao
 	}
-	if topo > total-linhas {
-		topo = total - linhas
+	switch v.Situacao {
+	case turma.Aprovado:
+		return "✓" + cont, estOK
+	case turma.Reprovado:
+		return "✖" + cont, estErro
+	case turma.ErroVerificacao:
+		return "✖ erro", estErro
 	}
-	if topo < 0 {
-		topo = 0
-	}
-	return topo
+	return string(v.Situacao), estFraco
 }
 
 // truncar corta o texto pela largura de tela, e não por bytes.
@@ -77,31 +98,4 @@ func truncar(s string, n int) string {
 		return string(r[:n])
 	}
 	return string(r[:n-3]) + "..."
-}
-
-// preencher completa o texto até a largura pedida, medindo em colunas de
-// tela: um %-Ns contaria os bytes das sequências de cor.
-func preencher(s string, n int) string {
-	falta := n - lipgloss.Width(s)
-	if falta <= 0 {
-		return s
-	}
-	return s + strings.Repeat(" ", falta)
-}
-
-// alinhar coloca o segundo texto à direita da largura informada.
-func alinhar(esquerda, direita string, largura int) string {
-	espaco := largura - lipgloss.Width(esquerda) - lipgloss.Width(direita)
-	if espaco < 1 {
-		return esquerda
-	}
-	return esquerda + strings.Repeat(" ", espaco) + direita
-}
-
-// rolagem descreve a posição da janela numa lista maior que a tela.
-func rolagem(topo, fim, total int) string {
-	if total == 0 {
-		return ""
-	}
-	return estFraco.Render(fmt.Sprintf("  %d-%d de %d", topo+1, fim, total))
 }

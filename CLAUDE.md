@@ -374,10 +374,44 @@ erro precisa dizer isso com todas as letras.
   na interrupção, `acoes` devolve erro e nada é aplicado, senão a coleta pela
   metade apagaria a entrega de quem não foi visitado.
 
-Telas: painel (pendências e resumo por exercício), exercício (a turma linha a
-linha, de onde partem coleta, clone, verificação e correção), exercícios
-(cadastro e edição), alunos, equipes, tarefas (registro das operações da
-sessão) e ajuda.
+Telas: painel (exercícios, detalhe, pendências e tarefa), exercício (a turma
+linha a linha, de onde partem coleta, clone, verificação e correção),
+exercícios (cadastro e edição), alunos, equipes e tarefas (registro das
+operações da sessão). A ajuda é uma caixa sobre a tela corrente, e não tela
+própria.
+
+### Painéis
+
+Especificação em `docs/spec_classroom_tui_paineis.md`. O desenho é o mesmo do
+`painel` (`~/Documents/work/dev/painel`, commit `10224c0`) e do `diario`, para
+as três ferramentas parecerem uma só:
+
+- `internal/moldura` é a cópia do `moldura.go` e de parte do `view.go` do
+  `painel`, com os nomes exportados. Fica em pacote próprio porque a
+  correção também a usa e não importa `internal/tui`. Se as cópias
+  divergirem, extrair um módulo comum às três passa a valer a pena;
+- toda tela é lista `[1]` e detalhe `[2]`, que segue o cursor sem `enter`. A
+  tela inicial tem ainda `[3]` pendências e, com tarefa em curso ou terminada
+  há menos de dois minutos, `[4]` o registro dela. `tab`, `shift+tab` e os
+  números movem o foco; com o foco no detalhe, `j` e `k` rolam. Na correção,
+  os dígitos continuam lançando nota, e só `tab` move o foco;
+- cor pelo sentido do valor, nunca por coluna, e os símbolos com o mesmo
+  sentido nas três ferramentas: `✓` em dia, `✖` falta, `▲` atenção, `●`
+  pendente, `·` nada a registrar;
+- a barra de título leva as abas, a turma e, à direita, o andamento da tarefa
+  em curso, em qualquer tela, inclusive na correção (`Sessao.Anunciar`);
+- a mensagem de estado ocupa a barra de teclas até a próxima tecla. Durante
+  a digitação de filtro ou de campo, nenhuma tecla é global;
+- a tela de tarefas guarda registros (`registro`), um por operação, com
+  estado e linhas. `telaTarefas.linhas` continua sendo o histórico corrido
+  da sessão, que os testes de operação conferem.
+
+`TestTelaOcupaOTerminalExato` exige que cada tela, em cada painel em foco,
+com e sem tarefa em curso, ocupe o terminal exato em 140x40, 100x30, 99x30,
+80x24, 60x20 e 40x12, medido por `ansi.StringWidth`. Linha com uma coluna a
+mais quebra no terminal e desalinha todas as bordas abaixo dela. Texto de
+aluno passa por `moldura.Limpo` ou `moldura.Quebrar`, porque tabulação e
+quebra de linha no meio de uma célula fazem exatamente isso.
 
 A correção é a mesma `internal/correcao` do subcomando, embutida: o modelo
 ganhou `Sessao`, e o campo `autonomo` decide se sair encerra o programa ou
@@ -462,7 +496,9 @@ reduzido. Antes de mexer nos pesos, conferir o valor vigente no
 
 `internal/correcao`, em Bubble Tea, no mesmo espírito da `chamada` do
 `diario`: lista, cursor, filtro por nome, gravação ao sair com `enter` e saída
-sem gravar com `q`.
+sem gravar com `q`. Desenha com `internal/moldura`: `[1]` os alunos, `[2]` a
+entrega do selecionado, onde a nota e o comentário são editados no lugar do
+valor, com o detalhe rolando até o texto em edição.
 
 O que é próprio daqui:
 

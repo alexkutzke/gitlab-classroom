@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -33,6 +34,8 @@ type tarefa struct {
 	prog     acoes.Progresso
 	cancelar context.CancelFunc
 	canal    chan tea.Msg
+	// registro é a entrada da tela de tarefas que acompanha esta operação.
+	registro *registro
 }
 
 // emCurso informa se há operação rodando; enquanto houver, as ações ficam
@@ -53,7 +56,8 @@ func (a *App) iniciar(nome string, trabalho func(ctx context.Context, prog acoes
 
 	ctx, cancelar := context.WithCancel(context.Background())
 	canal := make(chan tea.Msg, 64)
-	a.tarefa = &tarefa{nome: nome, cancelar: cancelar, canal: canal}
+	a.tarefa = &tarefa{nome: nome, cancelar: cancelar, canal: canal,
+		registro: a.tarefas.abrir(nome)}
 	a.status = nome + ": começando"
 
 	go func() {
@@ -96,29 +100,33 @@ func (a *App) tratarTarefa(msg tea.Msg) (tea.Cmd, bool) {
 
 	case fimMsg:
 		nome := "operação"
+		var reg *registro
 		if a.tarefa != nil {
-			nome = a.tarefa.nome
+			nome, reg = a.tarefa.nome, a.tarefa.registro
 			a.tarefa.cancelar()
 		}
 		a.tarefa = nil
+		if reg == nil {
+			reg = a.tarefas.abrir(nome)
+		}
 
 		switch {
 		case errors.Is(m.err, context.Canceled):
 			a.avisar("%s cancelada, nada foi gravado", nome)
-			a.tarefas.registrar("%s: cancelada", nome)
+			a.tarefas.encerrar(reg, regCancelado, "cancelada")
 		case m.err != nil:
 			a.erro = m.err.Error()
-			a.tarefas.registrar("%s: erro: %v", nome, m.err)
+			a.tarefas.encerrar(reg, regErro, "erro: "+m.err.Error())
 		default:
 			if m.gravar {
 				a.gravar()
 			}
 			a.recarregarPanorama()
 			a.avisar("%s", m.resumo)
-			a.tarefas.registrar("%s: %s", nome, m.resumo)
+			a.tarefas.encerrar(reg, regConcluido, m.resumo)
 		}
 		for _, d := range m.detalhes {
-			a.tarefas.registrar("  %s", d)
+			a.tarefas.acrescentar(reg, d)
 		}
 		return nil, true
 
@@ -157,5 +165,48 @@ func (a *App) barraDeProgresso() string {
 	if p.Rotulo != "" {
 		texto += "  " + truncar(p.Rotulo, 30)
 	}
-	return estDestaque.Render(texto) + estFraco.Render("   esc cancela")
+	return estAcento.Render(texto) + estFraco.Render("   esc cancela")
+}
+
+// gerundios dão o nome curto da operação na barra de título, como
+// "coletando 12/31".
+var gerundios = []struct{ prefixo, gerundio string }{
+	{"coleta", "coletando"},
+	{"clone", "clonando"},
+	{"verificação", "verificando"},
+	{"sincronização", "sincronizando"},
+	{"busca", "buscando membros"},
+}
+
+// textoProgresso é o andamento da tarefa em curso, para a barra de título.
+func (a *App) textoProgresso() string {
+	if !a.emCurso() {
+		return ""
+	}
+	nome := a.tarefa.nome
+	for _, g := range gerundios {
+		if strings.HasPrefix(nome, g.prefixo) {
+			nome = g.gerundio
+			break
+		}
+	}
+	p := a.tarefa.prog
+	if p.Total == 0 {
+		return nome + "..."
+	}
+	return fmt.Sprintf("%s %d/%d", nome, p.Feito, p.Total)
+}
+
+// recenteTarefa é quanto tempo o painel da tarefa continua na tela inicial
+// depois de ela terminar, para o resumo não sumir antes de ser lido.
+const recenteTarefa = 2 * time.Minute
+
+// tarefaVisivel informa se a tela inicial mostra o painel da tarefa: há uma
+// em curso, ou uma terminou há pouco.
+func (a *App) tarefaVisivel() bool {
+	if a.emCurso() {
+		return true
+	}
+	r := a.tarefas.ultimaOperacao()
+	return r != nil && relogio().Sub(r.fim) < recenteTarefa
 }

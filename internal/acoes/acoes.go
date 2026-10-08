@@ -541,6 +541,9 @@ func ItensDeCorrecao(t *turma.Turma, pastaTurma string, e turma.Exercicio, f Fil
 		if equipe := t.Equipe(e.ID, a.GRR); len(equipe) > 1 {
 			item.Equipe = NomesDaEquipe(t, equipe, a.GRR)
 		}
+		if d, ok := DevolutivaDaEntrega(t, e.ID, a.GRR); ok {
+			item.Devolutiva = &d
+		}
 		itens = append(itens, item)
 	}
 	return itens

@@ -453,6 +453,20 @@ func projetoDaEntrega(t *turma.Turma, exercicio, grr string) (string, bool) {
 	return en.Projeto, true
 }
 
+// DevolutivaDaEntrega devolve a devolutiva publicada para a entrega do aluno,
+// que na entrega em dupla pode estar registrada no nome do colega. É o que a
+// interface mostra; a decisão de publicar continua em planejarDevolutivas.
+func DevolutivaDaEntrega(t *turma.Turma, exercicio, grr string) (turma.Devolutiva, bool) {
+	if d, ok := t.Devolutiva(exercicio, grr); ok {
+		return *d, true
+	}
+	projeto, ok := projetoDaEntrega(t, exercicio, grr)
+	if !ok {
+		return turma.Devolutiva{}, false
+	}
+	return devolutivaDoFork(t, exercicio, grr, projeto)
+}
+
 // devolutivaDoFork procura o registro de publicação daquele fork.
 //
 // A busca é pelo aluno e, na falta dele, pelo projeto: na entrega em dupla a

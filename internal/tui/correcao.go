@@ -28,7 +28,7 @@ func (a *App) abrirCorrecao(e turma.Exercicio, filtro acoes.FiltroCorrecao) tea.
 		a.erro = err.Error()
 		return nil
 	}
-	s.Dimensionar(a.largura, a.altura-4)
+	s.Dimensionar(a.tamanho())
 	a.correcao = s
 	a.ir(idCorrecao)
 	return nil

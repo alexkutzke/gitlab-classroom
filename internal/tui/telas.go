@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
+	"github.com/alexkutzke/gitlab-classroom/internal/moldura"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
@@ -17,7 +20,6 @@ type erroMsg struct{ err error }
 
 type telaAlunos struct {
 	cursor int
-	topo   int
 
 	filtro     string
 	modoFiltro bool
@@ -39,6 +41,8 @@ func (ta *telaAlunos) lista(a *App) []turma.Aluno {
 	}
 	return out
 }
+
+func (ta *telaAlunos) digitando() bool { return ta.modoFiltro }
 
 func (ta *telaAlunos) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	if ta.modoFiltro {
@@ -67,7 +71,7 @@ func (ta *telaAlunos) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	case "up", "k":
 		ta.cursor = max(0, ta.cursor-1)
 	case "down", "j":
-		ta.cursor = min(total-1, ta.cursor+1)
+		ta.cursor = max(0, min(total-1, ta.cursor+1))
 	case "home", "g":
 		ta.cursor = 0
 	case "end", "G":
@@ -86,64 +90,123 @@ func (ta *telaAlunos) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	return nil, true
 }
 
-func (ta *telaAlunos) atalhos() string { return "S sincroniza · P só pendentes · / filtra" }
+func (ta *telaAlunos) entrada(a *App) string {
+	if !ta.modoFiltro {
+		return ""
+	}
+	return estAcento.Render("filtro: ") + ta.buffer + "_   " +
+		estTecla.Render("enter") + " " + estFraco.Render("aplica") + "   " +
+		estTecla.Render("esc") + " " + estFraco.Render("limpa")
+}
 
-func (ta *telaAlunos) desenhar(a *App) string {
-	var b strings.Builder
+func (ta *telaAlunos) teclas(a *App) []moldura.Tecla {
+	if a.focoAtual() == focoDetalhe {
+		return append(teclasDoDetalhe(), a.teclasComuns()...)
+	}
+	pend := "só pendentes"
+	if ta.soPendentes {
+		pend = "todos"
+	}
+	r := []moldura.Tecla{{K: "tab", Rotulo: "painel"}, {K: "j/k", Rotulo: "move"},
+		{K: "S", Rotulo: "sincroniza"}, {K: "P", Rotulo: pend}, {K: "/", Rotulo: "filtra"}}
+	return append(r, a.teclasComuns()...)
+}
+
+// textoDaConta é o rótulo da situação da conta, o mesmo em lista e detalhe.
+func textoDaConta(al turma.Aluno) (string, lipgloss.Style) {
+	switch al.SituacaoConta {
+	case "":
+		return "· não verificada", estFraco
+	case turma.ContaOK:
+		return "✓ " + string(al.SituacaoConta), estOK
+	}
+	return "▲ " + string(al.SituacaoConta), estAtencao
+}
+
+func (ta *telaAlunos) painelLista(a *App) (string, moldura.Conteudo) {
 	alunos := ta.lista(a)
-
-	if ta.modoFiltro {
-		b.WriteString(estDestaque.Render("filtro: ") + ta.buffer + "_\n\n")
-	} else {
-		b.WriteString(estFraco.Render(fmt.Sprintf("%d de %d aluno(s) ativo(s)",
-			len(alunos), a.panorama.Ativos)) + "\n\n")
+	titulo := fmt.Sprintf("Alunos (%d de %d)", len(alunos), a.panorama.Ativos)
+	if ta.soPendentes {
+		titulo += " · só pendentes"
+	}
+	if ta.filtro != "" {
+		titulo += fmt.Sprintf(" · filtro %q", ta.filtro)
 	}
 	if len(alunos) == 0 {
-		b.WriteString(estFraco.Render("  nenhum aluno") + "\n")
-		return b.String()
+		return titulo, moldura.Conteudo{Sel: -1, Linhas: []string{estFraco.Render(" nenhum aluno")}}
+	}
+	cab := []moldura.Celula{moldura.Cel("grr", estFraco), moldura.Cel("nome", estFraco),
+		moldura.Cel("conta", estFraco)}
+	var linhas [][]moldura.Celula
+	for _, al := range alunos {
+		conta, est := textoDaConta(al)
+		linhas = append(linhas, []moldura.Celula{moldura.Cel(al.GRR, estFraco),
+			moldura.Cel(truncar(al.Nome, 32), estNormal), moldura.Cel(conta, est)})
+	}
+	ta.cursor = max(0, min(ta.cursor, len(alunos)-1))
+	return titulo, moldura.Conteudo{Linhas: moldura.Tabela(cab, linhas), Sel: 1 + ta.cursor,
+		Info: fmt.Sprintf("%d de %d", ta.cursor+1, len(alunos))}
+}
+
+// detalhe mostra a conta no GitLab e a entrega do aluno em cada exercício.
+func (ta *telaAlunos) detalhe(a *App, largura int) (string, moldura.Conteudo) {
+	alunos := ta.lista(a)
+	if ta.cursor < 0 || ta.cursor >= len(alunos) {
+		return "Detalhe", moldura.Conteudo{Sel: -1, Linhas: []string{estFraco.Render(" nada selecionado")}}
+	}
+	al := alunos[ta.cursor]
+	d := novoDetalhe(largura)
+	d.campo("GRR", al.GRR)
+	d.campo("e-mail", al.Email)
+	usuario := al.UsuarioEsperado()
+	if al.Usuario == "" {
+		usuario += estFraco.Render(" (pela convenção)")
+	}
+	d.campo("usuário", usuario)
+	d.campo("grupo esperado", a.turma.Config.CaminhoGrupo(al.GRR))
+	grupo := al.Grupo
+	if grupo == "" {
+		grupo = estFraco.Render("-")
+	}
+	d.campo("grupo achado", grupo)
+	conta, est := textoDaConta(al)
+	d.campo("conta", est.Render(conta))
+	if !al.VerificadoEm.IsZero() {
+		d.campo("verificada em", instante(al.VerificadoEm))
+	}
+	if al.Observacao != "" {
+		d.campo("observação", al.Observacao)
 	}
 
-	altura := a.linhasDisponiveis() - 2
-	if ta.cursor >= len(alunos) {
-		ta.cursor = len(alunos) - 1
+	d.secao("ENTREGAS")
+	exs := a.turma.ExerciciosAtivos()
+	if len(exs) == 0 {
+		d.linha(estFraco.Render(" · nenhum exercício ativo"))
 	}
-	ta.topo = janela(ta.topo, ta.cursor, altura, len(alunos))
-	fim := min(ta.topo+altura, len(alunos))
-
-	for i := ta.topo; i < fim; i++ {
-		al := alunos[i]
-		cursor := "  "
-		nome := truncar(al.Nome, 32)
-		if i == ta.cursor {
-			cursor = estCursor.Render("> ")
-			nome = estCursor.Render(nome)
-		}
-		conta := estFraco.Render("não verificada")
-		if al.SituacaoConta != "" {
-			estilo := estAtencao
-			if al.SituacaoConta == turma.ContaOK {
-				estilo = estOK
-			}
-			conta = estilo.Render(string(al.SituacaoConta))
-		}
-		grupo := al.Grupo
-		if grupo == "" {
-			grupo = estFraco.Render("esperado " + a.turma.Config.CaminhoGrupo(al.GRR))
-		}
-		b.WriteString(cursor + preencher(al.GRR, 13) + preencher(nome, 33) +
-			preencher(conta, 18) + truncar(grupo, max(10, a.largura-66)) + "\n")
+	largID := 0
+	for _, e := range exs {
+		largID = max(largID, len([]rune(e.ID)))
 	}
-	if len(alunos) > altura {
-		b.WriteString(rolagem(ta.topo, fim, len(alunos)) + "\n")
+	for _, e := range exs {
+		id := e.ID + strings.Repeat(" ", largID-len([]rune(e.ID)))
+		en, ok := a.turma.Entrega(e.ID, al.GRR)
+		sit := estFraco.Render("· sem coleta")
+		if ok && en.Situacao != "" {
+			sit = corDaSituacao(en.Situacao).Render(simboloDaSituacao(en.Situacao) + " " + en.Descricao())
+		}
+		nota := ""
+		if n, ok := a.turma.Nota(e.ID, al.GRR); ok {
+			nota = "  " + estAcento.Render(fmt.Sprintf("nota %g", n.Valor))
+		}
+		d.linha(" " + estFraco.Render(id) + "  " + sit + nota)
 	}
-	return b.String()
+	return al.Nome, d.conteudo()
 }
 
 // --- equipes ---
 
 type telaEquipes struct {
 	cursor int
-	topo   int
 }
 
 // vinculoNaTela junta o vínculo com os nomes, para a lista não consultar o
@@ -188,13 +251,15 @@ func (tq *telaEquipes) lista(a *App) []vinculoNaTela {
 	return out
 }
 
+func (tq *telaEquipes) digitando() bool { return false }
+
 func (tq *telaEquipes) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	total := len(tq.lista(a))
 	switch msg.String() {
 	case "up", "k":
 		tq.cursor = max(0, tq.cursor-1)
 	case "down", "j":
-		tq.cursor = min(total-1, tq.cursor+1)
+		tq.cursor = max(0, min(total-1, tq.cursor+1))
 	case "home", "g":
 		tq.cursor = 0
 	case "end", "G":
@@ -214,81 +279,206 @@ func (tq *telaEquipes) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	return nil, true
 }
 
-func (tq *telaEquipes) atalhos() string {
-	return "d desfaz o vínculo · u procura membro sem cadastro"
+func (tq *telaEquipes) teclas(a *App) []moldura.Tecla {
+	if a.focoAtual() == focoDetalhe {
+		return append(teclasDoDetalhe(), a.teclasComuns()...)
+	}
+	r := []moldura.Tecla{{K: "tab", Rotulo: "painel"}, {K: "j/k", Rotulo: "move"},
+		{K: "d", Rotulo: "desfaz o vínculo"}, {K: "u", Rotulo: "procura membro sem cadastro"}}
+	return append(r, a.teclasComuns()...)
 }
 
-func (tq *telaEquipes) desenhar(a *App) string {
-	var b strings.Builder
+func (tq *telaEquipes) painelLista(a *App) (string, moldura.Conteudo) {
 	lista := tq.lista(a)
+	titulo := fmt.Sprintf("Equipes (%d)", len(lista))
 	if len(lista) == 0 {
-		b.WriteString(estFraco.Render("  nenhuma entrega compartilhada registrada") + "\n\n")
-		b.WriteString(estFraco.Render(
-			"  A coleta descobre sozinha quem é membro do fork de outro aluno.\n"+
-				"  Para a dupla que não adicionou o colega ao projeto, use\n"+
-				"  `classroom equipes vincular`.\n\n"+
-				"  u procura membro de fork cujo login não está no cadastro,\n"+
-				"  que é o motivo mais comum de uma dupla passar despercebida.") + "\n")
-		return b.String()
+		return titulo, moldura.Conteudo{Sel: -1,
+			Linhas: []string{estFraco.Render(" nenhuma entrega compartilhada registrada")}}
 	}
-
-	b.WriteString(estFraco.Render("EXERCÍCIO   INTEGRANTE                       ENTREGOU NO FORK DE              ORIGEM") + "\n")
-
-	altura := a.linhasDisponiveis() - 2
-	if tq.cursor >= len(lista) {
-		tq.cursor = len(lista) - 1
-	}
-	tq.topo = janela(tq.topo, tq.cursor, altura, len(lista))
-	fim := min(tq.topo+altura, len(lista))
-
-	for i := tq.topo; i < fim; i++ {
-		v := lista[i]
-		cursor := "  "
-		if i == tq.cursor {
-			cursor = estCursor.Render("> ")
-		}
-		origem := estFraco.Render(string(v.Vinculo.Origem))
+	cab := []moldura.Celula{moldura.Cel("exercício", estFraco), moldura.Cel("integrante", estFraco),
+		moldura.Cel("entregou no fork de", estFraco), moldura.Cel("origem", estFraco)}
+	var linhas [][]moldura.Celula
+	for _, v := range lista {
+		origem := moldura.Cel(string(v.Vinculo.Origem), estFraco)
 		if v.Vinculo.Origem == turma.VinculoManual {
-			origem = estDestaque.Render("manual")
+			origem = moldura.Cel("manual", estAcento)
 		}
-		b.WriteString(cursor + preencher(v.Vinculo.Exercicio, 10) +
-			preencher(truncar(v.Integrante, 32), 33) +
-			preencher(truncar(v.Dono, 32), 33) + origem + "\n")
+		linhas = append(linhas, []moldura.Celula{moldura.Cel(v.Vinculo.Exercicio, estNormal),
+			moldura.Cel(truncar(v.Integrante, 30), estNormal), moldura.Cel(truncar(v.Dono, 30), estNormal),
+			origem})
 	}
-	if len(lista) > altura {
-		b.WriteString(rolagem(tq.topo, fim, len(lista)) + "\n")
+	tq.cursor = max(0, min(tq.cursor, len(lista)-1))
+	return titulo, moldura.Conteudo{Linhas: moldura.Tabela(cab, linhas), Sel: 1 + tq.cursor,
+		Info: fmt.Sprintf("%d de %d", tq.cursor+1, len(lista))}
+}
+
+func (tq *telaEquipes) detalhe(a *App, largura int) (string, moldura.Conteudo) {
+	lista := tq.lista(a)
+	d := novoDetalhe(largura)
+	if tq.cursor < 0 || tq.cursor >= len(lista) {
+		d.texto("A coleta descobre sozinha quem é membro do fork de outro aluno. Para a dupla "+
+			"que não adicionou o colega ao projeto, use `classroom equipes vincular`.", estFraco)
+		d.linha("")
+		d.texto("u procura membro de fork cujo login não está no cadastro, que é o motivo mais "+
+			"comum de uma dupla passar despercebida.", estFraco)
+		return "Equipes", d.conteudo()
 	}
-	return b.String()
+	v := lista[tq.cursor]
+	d.campo("exercício", v.Vinculo.Exercicio)
+	d.campo("dono do fork", v.Dono+estFraco.Render(" "+v.Vinculo.Dono))
+	if en, ok := a.turma.Entrega(v.Vinculo.Exercicio, v.Vinculo.Dono); ok && en.Projeto != "" {
+		d.campo("fork", en.Projeto)
+	}
+	origem := string(v.Vinculo.Origem)
+	if v.Vinculo.Origem == turma.VinculoManual {
+		origem = estAcento.Render("manual") + estFraco.Render(", a coleta não toca")
+	} else {
+		origem += estFraco.Render(", descoberto pelos membros do fork")
+	}
+	d.campo("origem", origem)
+	if !v.Vinculo.AtualizadoEm.IsZero() {
+		d.campo("atualizado em", instante(v.Vinculo.AtualizadoEm))
+	}
+	d.secao("INTEGRANTES")
+	for _, grr := range a.turma.Equipe(v.Vinculo.Exercicio, v.Vinculo.Dono) {
+		nome := grr
+		if al, ok := a.turma.AlunoPorGRR(grr); ok {
+			nome = al.Nome
+		}
+		papel := ""
+		if grr == v.Vinculo.Dono {
+			papel = estFraco.Render("  dono do fork")
+		}
+		d.linha(" " + estFraco.Render("○") + " " + nome + estFraco.Render(" "+grr) + papel)
+	}
+	return v.Integrante, d.conteudo()
 }
 
 // --- tarefas ---
 
+// estadoRegistro é como uma entrada da tela de tarefas terminou.
+type estadoRegistro int
+
+const (
+	regEmCurso estadoRegistro = iota
+	regConcluido
+	regErro
+	regCancelado
+	// regAnotacao é o que a sessão fez sem operação longa, como a correção
+	// gravada ou o vínculo manual.
+	regAnotacao
+)
+
+func (e estadoRegistro) String() string {
+	switch e {
+	case regEmCurso:
+		return "em curso"
+	case regErro:
+		return "erro"
+	case regCancelado:
+		return "cancelada"
+	case regAnotacao:
+		return "feito"
+	}
+	return "concluída"
+}
+
+func (e estadoRegistro) simbolo() string {
+	switch e {
+	case regEmCurso:
+		return estAtencao.Render("●")
+	case regErro:
+		return estErro.Render("✖")
+	case regCancelado:
+		return estAtencao.Render("▲")
+	}
+	return estOK.Render("✓")
+}
+
+// registro é uma entrada da tela de tarefas: uma operação longa, com o resumo
+// e os detalhes dela, ou uma anotação avulsa.
+type registro struct {
+	nome     string
+	estado   estadoRegistro
+	operacao bool
+	inicio   time.Time
+	fim      time.Time
+	linhas   []string
+}
+
 // telaTarefas guarda a saída das operações longas, que de outro modo sumiria
 // junto com a barra de progresso.
 type telaTarefas struct {
-	linhas []string
-	topo   int
+	// linhas é o histórico corrido da sessão, na ordem em que aconteceu.
+	linhas    []string
+	registros []*registro
+	cursor    int
 }
 
-// registrar acrescenta uma linha ao histórico da sessão.
+// registrar acrescenta uma anotação avulsa ao histórico da sessão.
 func (tt *telaTarefas) registrar(formato string, args ...any) {
-	tt.linhas = append(tt.linhas, fmt.Sprintf(formato, args...))
+	texto := fmt.Sprintf(formato, args...)
+	tt.linhas = append(tt.linhas, texto)
+	agora := relogio()
+	tt.registros = append(tt.registros, &registro{nome: texto, estado: regAnotacao,
+		inicio: agora, fim: agora, linhas: []string{texto}})
 }
+
+// abrir cria a entrada de uma operação longa que começa agora.
+func (tt *telaTarefas) abrir(nome string) *registro {
+	r := &registro{nome: nome, estado: regEmCurso, operacao: true, inicio: relogio()}
+	tt.registros = append(tt.registros, r)
+	return r
+}
+
+// encerrar fecha a operação com o estado e a linha de resumo.
+func (tt *telaTarefas) encerrar(r *registro, estado estadoRegistro, resumo string) {
+	r.estado, r.fim = estado, relogio()
+	r.linhas = append(r.linhas, resumo)
+	tt.linhas = append(tt.linhas, r.nome+": "+resumo)
+}
+
+// acrescentar junta uma linha de detalhe à operação.
+func (tt *telaTarefas) acrescentar(r *registro, linha string) {
+	r.linhas = append(r.linhas, linha)
+	tt.linhas = append(tt.linhas, "  "+linha)
+}
+
+// ultimaOperacao devolve a operação longa mais recente já encerrada.
+func (tt *telaTarefas) ultimaOperacao() *registro {
+	for i := len(tt.registros) - 1; i >= 0; i-- {
+		if r := tt.registros[i]; r.operacao && r.estado != regEmCurso {
+			return r
+		}
+	}
+	return nil
+}
+
+// emOrdem devolve as entradas da mais recente para a mais antiga, que é a
+// ordem da lista: o que acabou de acontecer fica no topo.
+func (tt *telaTarefas) emOrdem() []*registro {
+	out := make([]*registro, len(tt.registros))
+	for i, r := range tt.registros {
+		out[len(out)-1-i] = r
+	}
+	return out
+}
+
+func (tt *telaTarefas) digitando() bool { return false }
 
 func (tt *telaTarefas) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
-	altura := a.linhasDisponiveis()
+	total := len(tt.registros)
 	switch msg.String() {
 	case "up", "k":
-		tt.topo = max(0, tt.topo-1)
+		tt.cursor = max(0, tt.cursor-1)
 	case "down", "j":
-		tt.topo = min(max(0, len(tt.linhas)-altura), tt.topo+1)
+		tt.cursor = max(0, min(total-1, tt.cursor+1))
 	case "home", "g":
-		tt.topo = 0
+		tt.cursor = 0
 	case "end", "G":
-		tt.topo = max(0, len(tt.linhas)-altura)
+		tt.cursor = max(0, total-1)
 	case "c":
-		tt.linhas = nil
-		tt.topo = 0
+		tt.linhas, tt.registros, tt.cursor = nil, nil, 0
 		a.avisar("histórico limpo")
 	default:
 		return nil, false
@@ -296,89 +486,59 @@ func (tt *telaTarefas) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	return nil, true
 }
 
-func (tt *telaTarefas) desenhar(a *App) string {
-	if len(tt.linhas) == 0 {
-		return estFraco.Render("  nenhuma operação nesta sessão")
+func (tt *telaTarefas) teclas(a *App) []moldura.Tecla {
+	if a.focoAtual() == focoDetalhe {
+		return append(teclasDoDetalhe(), a.teclasComuns()...)
 	}
-	var b strings.Builder
-	altura := a.linhasDisponiveis()
-	fim := min(tt.topo+altura, len(tt.linhas))
-	for i := tt.topo; i < fim; i++ {
-		b.WriteString("  " + truncar(tt.linhas[i], a.largura-4) + "\n")
-	}
-	return b.String()
+	r := []moldura.Tecla{{K: "tab", Rotulo: "painel"}, {K: "j/k", Rotulo: "move"},
+		{K: "c", Rotulo: "limpa o histórico"}}
+	return append(r, a.teclasComuns()...)
 }
 
-// --- ajuda ---
-
-type ajuda struct{}
-
-func (aj *ajuda) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) { return nil, false }
-
-func (aj *ajuda) desenhar(a *App) string {
-	secoes := []struct {
-		titulo  string
-		atalhos [][2]string
-	}{
-		{"Navegação", [][2]string{
-			{"j k, setas", "move o cursor"},
-			{"g G", "primeiro e último"},
-			{"pgup pgdown", "página"},
-			{"enter", "abre o item"},
-			{"esc q", "volta, e sai no painel"},
-			{"r", "recarrega os arquivos do disco"},
-		}},
-		{"Ações", [][2]string{
-			{"C", "coleta todos os exercícios ativos"},
-			{"S", "sincroniza o cadastro e as contas"},
-			{"c", "coleta o exercício sob o cursor, ou o aberto"},
-			{"l", "clona os forks do exercício aberto"},
-			{"v", "roda a suíte do exercício aberto"},
-			{"esc", "cancela a operação em curso"},
-		}},
-		{"Telas", [][2]string{
-			{"p", "painel"},
-			{"a", "alunos"},
-			{"e", "equipes"},
-			{"t", "tarefas"},
-			{"?", "esta ajuda"},
-		}},
-		{"Exercício", [][2]string{
-			{"n N", "corrige, e só quem ainda não tem nota"},
-			{"V X", "vincula e desvincula entrega em dupla"},
-			{"o", "abre o clone do aluno no $EDITOR"},
-			{"w", "abre o projeto no GitLab"},
-			{"s", "alterna a ordem: nome, situação, nota"},
-			{"/", "filtra por nome ou GRR"},
-		}},
-		{"Alunos", [][2]string{
-			{"P", "mostra só quem tem pendência de cadastro"},
-		}},
-		{"Equipes", [][2]string{
-			{"d", "desfaz o vínculo sob o cursor"},
-			{"u", "procura membro de fork sem cadastro"},
-		}},
-		{"Exercícios (x)", [][2]string{
-			{"n", "cadastra um exercício"},
-			{"T D P V I", "edita título, prazo, peso, suíte e imagem"},
-			{"K", "edita a categoria: exercicio, trabalho"},
-			{"A z", "arquiva, e mostra os arquivados"},
-		}},
-		{"Painel", [][2]string{
-			{"E", "exporta o relatório e a planilha de notas"},
-		}},
+func (tt *telaTarefas) painelLista(a *App) (string, moldura.Conteudo) {
+	regs := tt.emOrdem()
+	titulo := fmt.Sprintf("Tarefas (%d)", len(regs))
+	if len(regs) == 0 {
+		return titulo, moldura.Conteudo{Sel: -1,
+			Linhas: []string{estFraco.Render(" nenhuma operação nesta sessão")}}
 	}
-
-	var b strings.Builder
-	for _, s := range secoes {
-		b.WriteString(estTitulo.Render(s.titulo) + "\n")
-		for _, at := range s.atalhos {
-			b.WriteString("  " + preencher(estDestaque.Render(at[0]), 16) + estFraco.Render(at[1]) + "\n")
-		}
-		b.WriteString("\n")
+	var linhas []string
+	for _, r := range regs {
+		linhas = append(linhas, " "+r.estado.simbolo()+" "+estFraco.Render(r.inicio.Format("15:04"))+
+			"  "+moldura.Limpo(truncar(r.nome, 60)))
 	}
-	b.WriteString(estFraco.Render(
-		"A linha de comando continua valendo para tudo, e é o caminho para scripts:\n"+
-			"classroom --help lista os subcomandos.") + "\n")
-	return b.String()
+	tt.cursor = max(0, min(tt.cursor, len(regs)-1))
+	return titulo, moldura.Conteudo{Linhas: linhas, Sel: tt.cursor,
+		Info: fmt.Sprintf("%d de %d", tt.cursor+1, len(regs))}
+}
+
+func (tt *telaTarefas) detalhe(a *App, largura int) (string, moldura.Conteudo) {
+	regs := tt.emOrdem()
+	if tt.cursor < 0 || tt.cursor >= len(regs) {
+		return "Registro", moldura.Conteudo{Sel: -1, Linhas: []string{estFraco.Render(" nada selecionado")}}
+	}
+	r := regs[tt.cursor]
+	d := novoDetalhe(largura)
+	d.campo("situação", r.estado.simbolo()+" "+r.estado.String())
+	d.campo("início", r.inicio.Format("15:04:05"))
+	if !r.fim.IsZero() && r.operacao {
+		d.campo("fim", r.fim.Format("15:04:05")+estFraco.Render(", "+r.fim.Sub(r.inicio).Round(time.Second).String()))
+	}
+	if a.emCurso() && a.tarefa.registro == r {
+		d.campo("andamento", a.textoProgresso())
+	}
+	d.secao("REGISTRO")
+	for _, l := range r.linhas {
+		d.texto(l, estNormal)
+	}
+	return r.nome, d.conteudo()
+}
+
+// linhasDoRegistro é o que o painel da tarefa mostra na tela inicial.
+func linhasDoRegistro(r *registro) []string {
+	out := []string{" " + r.estado.simbolo() + " " + moldura.Limpo(r.nome)}
+	for _, l := range r.linhas {
+		out = append(out, "   "+moldura.Limpo(l))
+	}
+	return out
 }

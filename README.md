@@ -49,16 +49,31 @@ cd ~/.../2026-02/ds122/ds122_n
 classroom
 ```
 
-A tela inicial é o painel: o que falta fazer e como anda cada exercício.
-`enter` abre um exercício e mostra a turma linha a linha, com situação da
-entrega, commits, resultado da suíte, marca de entrega em dupla e a nota.
+Cada tela é feita de painéis com borda, no desenho do `painel` e do
+`diario`: a lista à esquerda, numerada `[1]`, e o detalhe do item
+selecionado à direita, `[2]`, que muda junto com o cursor, sem `enter`. O
+painel em foco tem a borda azul. A primeira linha leva as abas das telas, a
+turma e, com uma operação em curso, o andamento dela ("coletando 12/31"),
+visível em qualquer tela. A última linha leva as teclas que valem no painel
+em foco, ou a mensagem da última ação até a próxima tecla. Abaixo de 100
+colunas, os painéis se empilham e o detalhe ocupa a tela quando está em
+foco.
+
+A tela inicial tem `[1]` os exercícios, com as contagens do `classroom
+resumo`, `[2]` o detalhe do selecionado, `[3]` as pendências e, com tarefa em
+curso ou recém-terminada, `[4]` o registro dela. `enter` numa pendência leva
+ao exercício dela. `enter` num exercício abre a turma linha a linha, com o
+detalhe da entrega do aluno ao lado: fork, commits, suíte, nota, comentário
+inteiro e devolutiva.
 
 | Tecla | Onde | Ação |
 |---|---|---|
-| `j` `k`, setas, `g` `G`, `pgup` `pgdown` | todas | navega |
+| `tab` `shift+tab`, `1` a `4` | todas | foco no painel seguinte, anterior, ou direto |
+| `j` `k`, setas, `g` `G`, `pgup` `pgdown` | todas | move na lista; com o foco no detalhe, rola |
 | `enter` | painel, exercícios | abre |
-| `esc` `q` | todas | volta; no painel, sai |
-| `p` `x` `a` `e` `t` `?` | todas | painel, exercícios, alunos, equipes, tarefas, ajuda |
+| `esc` `q` | todas | volta; no painel, sai. `esc` no detalhe devolve o foco à lista |
+| `p` `x` `a` `e` `t` | todas | painel, exercícios, alunos, equipes, tarefas |
+| `?` | todas | caixa com todas as teclas; qualquer tecla fecha |
 | `r` | todas | relê os arquivos do disco |
 | `C` `S` | todas | coleta todos os exercícios; sincroniza o cadastro |
 | `c` `l` `v` | exercício | coleta, clona, verifica |
@@ -77,7 +92,10 @@ apurou fica na tela de tarefas, inclusive os erros por aluno, que de outro
 modo sumiriam com a barra de progresso.
 
 A tela de correção é a mesma do `classroom corrigir`, embutida como subtela:
-as teclas e as regras de nota são idênticas.
+as teclas e as regras de nota são idênticas. Ela também é dividida em `[1]`, a
+lista de alunos, e `[2]`, a entrega do selecionado, onde a nota e o
+comentário são digitados, no lugar do valor. Com o foco em `[2]`, `j` e `k`
+rolam o detalhe, e os dígitos continuam lançando a nota.
 
 Ação difícil de desfazer pede confirmação: arquivar exercício e desfazer
 vínculo de equipe.

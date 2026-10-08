@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alexkutzke/gitlab-classroom/internal/acoes"
+	"github.com/alexkutzke/gitlab-classroom/internal/moldura"
 	"github.com/alexkutzke/gitlab-classroom/internal/turma"
 )
 
@@ -111,7 +112,7 @@ func (tx *telaExercicios) atualizar(a *App, msg tea.KeyMsg) (tea.Cmd, bool) {
 	case "up", "k":
 		tx.cursor = max(0, tx.cursor-1)
 	case "down", "j":
-		tx.cursor = min(len(lista)-1, tx.cursor+1)
+		tx.cursor = max(0, min(len(lista)-1, tx.cursor+1))
 	case "home", "g":
 		tx.cursor = 0
 	case "end", "G":
@@ -320,57 +321,131 @@ func (tx *telaExercicios) alternarArquivo(a *App, e turma.Exercicio) {
 	})
 }
 
-func (tx *telaExercicios) atalhos() string {
-	return "n novo · T título · D prazo · P peso · V suíte · I imagem · K categoria · A arquiva · z mostra arquivados"
+func (tx *telaExercicios) digitando() bool { return tx.campo != campoNenhum }
+
+// entrada lembra, durante a edição, como confirmar e desistir. O valor
+// digitado aparece no lugar dele, no painel de detalhe.
+func (tx *telaExercicios) entrada(a *App) string {
+	if tx.campo == campoNenhum {
+		return ""
+	}
+	return estAcento.Render(tx.campo.String()) + "   " +
+		estTecla.Render("enter") + " " + estFraco.Render("grava") + "   " +
+		estTecla.Render("esc") + " " + estFraco.Render("cancela")
 }
 
-func (tx *telaExercicios) desenhar(a *App) string {
-	var b strings.Builder
-	lista := tx.lista(a)
+func (tx *telaExercicios) teclas(a *App) []moldura.Tecla {
+	if a.focoAtual() == focoDetalhe {
+		r := teclasDoDetalhe()
+		r = append(r, moldura.Tecla{K: "T D P V I K", Rotulo: "edita o campo"})
+		return append(r, a.teclasComuns()...)
+	}
+	r := []moldura.Tecla{
+		{K: "tab", Rotulo: "painel"}, {K: "enter", Rotulo: "entregas"}, {K: "n", Rotulo: "novo"},
+		{K: "T", Rotulo: "título"}, {K: "D", Rotulo: "prazo"}, {K: "P", Rotulo: "peso"},
+		{K: "V", Rotulo: "suíte"}, {K: "I", Rotulo: "imagem"}, {K: "K", Rotulo: "categoria"},
+		{K: "A", Rotulo: "arquiva"}, {K: "z", Rotulo: "arquivados"},
+	}
+	return append(r, a.teclasComuns()...)
+}
 
-	if tx.campo != campoNenhum {
-		b.WriteString(estDestaque.Render(tx.campo.String()+": ") + tx.buffer + "_\n\n")
-	} else {
-		b.WriteString(estFraco.Render(fmt.Sprintf("%d exercício(s)", len(lista))) + "\n\n")
+func (tx *telaExercicios) painelLista(a *App) (string, moldura.Conteudo) {
+	lista := tx.lista(a)
+	titulo := fmt.Sprintf("Exercícios (%d)", len(lista))
+	if tx.arquivados {
+		titulo = fmt.Sprintf("Exercícios, com arquivados (%d)", len(lista))
 	}
 	if len(lista) == 0 {
-		b.WriteString(estFraco.Render("  nenhum exercício; n cadastra o primeiro") + "\n")
-		return b.String()
+		return titulo, moldura.Conteudo{Sel: -1,
+			Linhas: []string{estFraco.Render(" nenhum exercício; n cadastra o primeiro")}}
 	}
-
-	b.WriteString(estFraco.Render("  ID          PRAZO       PESO  CATEGORIA   SUÍTE                     TÍTULO") + "\n")
-
-	altura := a.linhasDisponiveis() - 3
-	if tx.cursor >= len(lista) {
-		tx.cursor = len(lista) - 1
-	}
-	tx.topo = janela(tx.topo, tx.cursor, altura, len(lista))
-	fim := min(tx.topo+altura, len(lista))
-
-	for i := tx.topo; i < fim; i++ {
-		e := lista[i]
-		cursor := "  "
-		id := e.ID
-		if i == tx.cursor {
-			cursor = estCursor.Render("> ")
-			id = estCursor.Render(id)
+	cab := []moldura.Celula{moldura.Cel("id", estFraco), moldura.Cel("prazo", estFraco),
+		moldura.Num("peso", estFraco), moldura.Cel("categoria", estFraco),
+		moldura.Cel("suíte", estFraco), moldura.Cel("título", estFraco)}
+	var linhas [][]moldura.Celula
+	for _, e := range lista {
+		est := estNormal
+		if !e.EstaAtivo() {
+			est = estFraco
 		}
-		suite := estFraco.Render("sem suíte")
+		suite := moldura.Cel("-", estFraco)
 		if e.TemSuite() {
-			suite = truncar(e.Verificacao, 24)
+			suite = moldura.Cel(truncar(e.Verificacao, 24), est)
 		}
-		situacao := ""
-		if e.Situacao == turma.ExercicioArquivado {
-			situacao = estFraco.Render(" (arquivado)")
+		titulo := truncar(e.Titulo, 30)
+		if !e.EstaAtivo() {
+			titulo += " (arquivado)"
 		}
-		b.WriteString(cursor + preencher(id, 12) + preencher(e.Prazo.String(), 12) +
-			preencher(fmt.Sprintf("%g", e.Peso), 6) + preencher(truncar(e.CategoriaDe(), 10), 12) +
-			preencher(suite, 26) + truncar(e.Titulo, 30) + situacao + "\n")
+		linhas = append(linhas, []moldura.Celula{moldura.Cel(e.ID, est), moldura.Cel(e.Prazo.Curta(), est),
+			moldura.Num(fmt.Sprintf("%g", e.Peso), est), moldura.Cel(e.CategoriaDe(), estFraco),
+			suite, moldura.Cel(titulo, est)})
 	}
-	if len(lista) > altura {
-		b.WriteString(rolagem(tx.topo, fim, len(lista)) + "\n")
+	tx.cursor = max(0, min(tx.cursor, len(lista)-1))
+	return titulo, moldura.Conteudo{Linhas: moldura.Tabela(cab, linhas), Sel: 1 + tx.cursor,
+		Info: fmt.Sprintf("%d de %d", tx.cursor+1, len(lista))}
+}
+
+// detalhe mostra todos os campos do exercício. A edição acontece aqui, no
+// lugar do valor, e o cadastro novo também.
+func (tx *telaExercicios) detalhe(a *App, largura int) (string, moldura.Conteudo) {
+	e, ok := tx.atual(a)
+	titulo := e.ID
+	if tx.novo != nil {
+		e, ok, titulo = *tx.novo, true, "Novo exercício"
 	}
-	return b.String()
+	if !ok {
+		return "Detalhe", moldura.Conteudo{Sel: -1, Linhas: []string{estFraco.Render(" nada selecionado")}}
+	}
+	d := novoDetalhe(largura)
+	valor := func(c campoExercicio, v string) string {
+		if c != campoNenhum && c == tx.campo {
+			return estAcento.Render(tx.buffer + "_")
+		}
+		if v == "" {
+			return estFraco.Render("-")
+		}
+		return v
+	}
+	rotulo := func(nome, tecla string) string {
+		if tx.novo != nil || tecla == "" {
+			return nome
+		}
+		return nome + " (" + tecla + ")"
+	}
+	if tx.novo != nil {
+		d.campo("repositório", valor(campoRepo, e.Repo))
+		d.campo("id", valor(campoNenhum, e.ID))
+		d.campo("prazo", valor(campoPrazo, e.Prazo.String()))
+		d.campo("título", valor(campoTitulo, e.Titulo))
+		d.linha("")
+		d.texto("O cadastro pede o repositório-modelo, o prazo e o título, nessa ordem. "+
+			"Os demais campos se editam depois, na lista.", estFraco)
+		return titulo, d.conteudo()
+	}
+
+	d.campo("id", e.ID)
+	d.campo("repositório", e.Repo)
+	d.campo(rotulo("título", "T"), valor(campoTitulo, e.Titulo))
+	d.campo(rotulo("prazo", "D"), valor(campoPrazo, e.Prazo.String()))
+	d.campo(rotulo("peso", "P"), valor(campoPeso, fmt.Sprintf("%g", e.Peso)))
+	d.campo(rotulo("categoria", "K"), valor(campoCategoria, e.CategoriaDe()))
+	d.campo(rotulo("suíte", "V"), valor(campoVerificacao, e.Verificacao))
+	imagem := e.Imagem
+	if imagem == "" && tx.campo != campoImagem {
+		imagem = estFraco.Render("padrão, " + a.turma.Config.ImagemVerificacao)
+	}
+	d.campo(rotulo("imagem", "I"), valor(campoImagem, imagem))
+	ordem := "-"
+	if e.Ordem != 0 {
+		ordem = fmt.Sprint(e.Ordem)
+	}
+	d.campo("ordem", ordem)
+	situacao := estOK.Render("ativo")
+	if !e.EstaAtivo() {
+		situacao = estFraco.Render("arquivado")
+	}
+	d.campo(rotulo("situação", "A"), situacao)
+	return titulo, d.conteudo()
 }
 
 // mustID devolve o id do exercício selecionado, ou vazio.
