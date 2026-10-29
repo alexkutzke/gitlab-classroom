@@ -92,6 +92,20 @@ func TestResumoDe(t *testing.T) {
 			},
 		},
 		{
+			nome: "sem_ramo tem contagem própria e não é pendência",
+			preparar: func(tu *turma.Turma) {
+				tu.Exercicios[0].Ramo = "reentrega"
+				beto, _ := tu.Entrega("html", "GRR20259002")
+				beto.Situacao, beto.Commit = turma.SemRamo, ""
+			},
+			conferir: func(t *testing.T, r ResumoTurma) {
+				e := exercicioDoResumo(t, r, "html")
+				if e.SemRamo != 1 || e.SemEntrega != 0 || e.Erros != 0 || e.Entregues != 1 {
+					t.Errorf("exercício %+v; esperado 1 sem_ramo, fora de sem_entrega e de erros", e)
+				}
+			},
+		},
+		{
 			nome: "dupla conta por aluno nas entregas e uma vez nas devolutivas",
 			preparar: func(tu *turma.Turma) {
 				beto, _ := tu.Entrega("html", "GRR20259002")
@@ -259,5 +273,23 @@ func TestResumoDe(t *testing.T) {
 			}
 			c.conferir(t, r)
 		})
+	}
+}
+
+// Na reentrega, sem_ramo é quem não pediu e mantém a nota: a tela inicial não
+// pode cobrar entrega dele.
+func TestSemRamoNaoViraPendenciaDeEntrega(t *testing.T) {
+	tu := turmaDoResumo()
+	tu.Exercicios[0].Ramo = "reentrega"
+	beto, _ := tu.Entrega("html", "GRR20259002")
+	beto.Situacao = turma.SemRamo
+	p := PanoramaDe(tu, turma.NovaData(2026, time.November, 30))
+	if p.Exercicios[0].Pendentes != 0 {
+		t.Errorf("pendentes = %d, queria 0", p.Exercicios[0].Pendentes)
+	}
+	for _, texto := range p.Pendencias() {
+		if strings.Contains(texto, "sem entrega") {
+			t.Errorf("pendência indevida: %q", texto)
+		}
 	}
 }

@@ -54,6 +54,10 @@ type ResumoExercicioContagem struct {
 	Atrasadas  int `json:"atrasadas"`
 	SemEntrega int `json:"sem_entrega"`
 	Erros      int `json:"erros"`
+	// SemRamo é o fork sem o ramo que o exercício pede. Na reentrega, quem
+	// não pediu e mantém a nota: não é falta de entrega nem erro de coleta.
+	// Entrou depois da versão 1, sem mudar a versão, como campo novo.
+	SemRamo int `json:"sem_ramo"`
 
 	Corrigidas  int `json:"corrigidas"`
 	PorCorrigir int `json:"por_corrigir"`
@@ -118,6 +122,7 @@ func ResumoDe(t *turma.Turma, geradoEm time.Time) ResumoTurma {
 			Atrasadas:                  s[turma.SemCommitNoPrazo],
 			SemEntrega:                 s[turma.SemFork] + s[turma.ForkSemCommit],
 			Erros:                      s[turma.Erro],
+			SemRamo:                    s[turma.SemRamo],
 			Corrigidas:                 re.Notas,
 			PorCorrigir:                re.SemNota,
 			VerificacoesDesatualizadas: re.VerificacoesVelhas,

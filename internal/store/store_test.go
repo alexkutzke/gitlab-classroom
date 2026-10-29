@@ -277,3 +277,51 @@ func TestCategoriaSobreviveAGravacao(t *testing.T) {
 		t.Error("a segunda parte se perdeu na leitura")
 	}
 }
+
+func TestLerExerciciosSemColunaRamoUsaORamoPadrao(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Criar(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conteudo := "id;repo;titulo;prazo;peso;ordem;verificacao;imagem;categoria;situacao\n" +
+		"trabalho1;ds122-project-2026-2;Entrega 1;2026-09-30;30;;;;trabalho;ativo\n"
+	if err := os.WriteFile(s.caminho("exercicios.csv"), []byte(conteudo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exs, err := s.lerExercicios()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exs) != 1 || exs[0].Ramo != "" {
+		t.Errorf("exercícios = %+v, queria o ramo vazio no CSV anterior à coluna", exs)
+	}
+}
+
+func TestRamoSobreviveAGravacao(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Criar(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := &turma.Turma{Exercicios: []turma.Exercicio{
+		{ID: "trabalho1", Repo: "ds122-project-2026-2", Prazo: turma.NovaData(2026, 11, 20),
+			Peso: 30, Categoria: "trabalho", Ramo: "reentrega", Situacao: turma.ExercicioAtivo},
+		{ID: "trabalho3", Repo: "ds122-project-2026-2", Prazo: turma.NovaData(2026, 11, 27),
+			Peso: 40, Categoria: "trabalho", Situacao: turma.ExercicioAtivo},
+	}}
+	if err := s.Gravar(original); err != nil {
+		t.Fatal(err)
+	}
+	lida, err := s.Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ramos := map[string]string{}
+	for _, e := range lida.Exercicios {
+		ramos[e.ID] = e.Ramo
+	}
+	if ramos["trabalho1"] != "reentrega" || ramos["trabalho3"] != "" {
+		t.Errorf("ramos lidos = %v", ramos)
+	}
+}

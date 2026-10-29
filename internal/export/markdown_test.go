@@ -46,6 +46,7 @@ func TestCelula(t *testing.T) {
 		{"atrasado em dupla", turma.Entrega{Situacao: turma.Entregue, AtrasoDias: 1, Detalhe: "entrega compartilhada, fork de Ana Souza"}, true, "ok (mexeu +1d) (dupla)"},
 		{"sem commit em dupla", turma.Entrega{Situacao: turma.ForkSemCommit, Detalhe: "entrega compartilhada, fork de Ana Souza"}, true, "sem commit (dupla)"},
 		{"sem fork", turma.Entrega{Situacao: turma.SemFork}, true, "sem fork"},
+		{"sem o ramo do exercício", turma.Entrega{Situacao: turma.SemRamo, Detalhe: "ramo reentrega não existe no fork"}, true, "sem reentrega"},
 		{"sem conta", turma.Entrega{Situacao: turma.SemConta}, true, "sem conta"},
 		{"sem acesso", turma.Entrega{Situacao: turma.SemAcesso}, true, "sem acesso"},
 		{"sem grupo", turma.Entrega{Situacao: turma.GrupoInvisivel}, true, "sem grupo"},

@@ -203,7 +203,9 @@ func (s *Store) gravarAlunos(as []turma.Aluno) error {
 // A categoria entra no fim da linha: as colunas são localizadas pelo nome, e
 // o exercicios.csv gravado antes deste campo continua sendo lido, com a
 // categoria vazia valendo a padrão.
-var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "ordem", "verificacao", "imagem", "categoria", "situacao"}
+//
+// O ramo veio depois, também no fim, pelo mesmo motivo.
+var cabecalhoExercicios = []string{"id", "repo", "titulo", "prazo", "peso", "ordem", "verificacao", "imagem", "categoria", "situacao", "ramo"}
 
 func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 	t, err := lerTabela(s.caminho(arqExercicios), cabecalhoExercicios, "id")
@@ -238,6 +240,7 @@ func (s *Store) lerExercicios() ([]turma.Exercicio, error) {
 			Verificacao: t.str(i, "verificacao"),
 			Imagem:      t.str(i, "imagem"),
 			Categoria:   t.str(i, "categoria"),
+			Ramo:        t.str(i, "ramo"),
 			Situacao:    sit,
 		}
 		if err := e.Validar(); err != nil {
@@ -253,7 +256,7 @@ func (s *Store) gravarExercicios(es []turma.Exercicio) error {
 	for _, e := range es {
 		linhas = append(linhas, []string{
 			e.ID, e.Repo, e.Titulo, e.Prazo.String(), formatarDecimal(e.Peso),
-			formatarOrdem(e.Ordem), e.Verificacao, e.Imagem, e.Categoria, string(e.Situacao),
+			formatarOrdem(e.Ordem), e.Verificacao, e.Imagem, e.Categoria, string(e.Situacao), e.Ramo,
 		})
 	}
 	return gravarCSV(s.caminho(arqExercicios), linhas)

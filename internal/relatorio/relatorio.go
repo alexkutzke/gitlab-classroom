@@ -47,14 +47,18 @@ func Alunos(w io.Writer, alunos []turma.Aluno) {
 // Exercicios lista os exercícios cadastrados.
 func Exercicios(w io.Writer, es []turma.Exercicio) {
 	tw := nova(w)
-	fmt.Fprintln(tw, "ID\tREPOSITÓRIO\tPRAZO\tPESO\tCATEGORIA\tVERIFICAÇÃO\tSITUAÇÃO\tTÍTULO")
+	fmt.Fprintln(tw, "ID\tREPOSITÓRIO\tRAMO\tPRAZO\tPESO\tCATEGORIA\tVERIFICAÇÃO\tSITUAÇÃO\tTÍTULO")
 	for _, e := range es {
 		verif := e.Verificacao
 		if verif == "" {
 			verif = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%g\t%s\t%s\t%s\t%s\n",
-			e.ID, e.Repo, e.Prazo.String(), e.Peso, e.CategoriaDe(), verif, e.Situacao, e.Titulo)
+		ramo := e.Ramo
+		if ramo == "" {
+			ramo = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%g\t%s\t%s\t%s\t%s\n",
+			e.ID, e.Repo, ramo, e.Prazo.String(), e.Peso, e.CategoriaDe(), verif, e.Situacao, e.Titulo)
 	}
 	tw.Flush()
 }
@@ -199,6 +203,9 @@ func statusDaCategoria(w io.Writer, t *turma.Turma, exs []turma.Exercicio, categ
 		prazo := e.Prazo.String()
 		if e.Prazo.Depois(hoje) {
 			prazo += " (em aberto)"
+		}
+		if e.Ramo != "" {
+			prazo += "  ramo " + e.Ramo
 		}
 		fmt.Fprintf(w, "%s  %s  prazo %s\n  ", e.ID, e.Titulo, prazo)
 		if len(entregas) == 0 {

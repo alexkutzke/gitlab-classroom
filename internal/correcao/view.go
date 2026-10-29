@@ -135,6 +135,9 @@ func (m *modelo) celulaSituacao(it Item) moldura.Celula {
 		return moldura.Cel(fmt.Sprintf("fora do prazo (+%dd)", e.AtrasoDias), estAtencao)
 	case turma.ForkSemCommit:
 		return moldura.Cel(e.Situacao.Rotulo(), estAtencao)
+	case turma.SemRamo:
+		// Na reentrega, quem não pediu mantém a nota já lançada.
+		return moldura.Cel(e.Situacao.Rotulo(), estFraco)
 	}
 	return moldura.Cel(e.Situacao.Rotulo(), estErro)
 }
@@ -374,7 +377,7 @@ func simboloDaSituacao(s turma.SituacaoEntrega) string {
 		return "✓"
 	case turma.SemCommitNoPrazo, turma.ForkSemCommit:
 		return "▲"
-	case "":
+	case "", turma.SemRamo:
 		return "·"
 	}
 	return "✖"

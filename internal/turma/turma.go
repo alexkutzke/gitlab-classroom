@@ -114,7 +114,13 @@ type Exercicio struct {
 	// Categoria agrupa os exercícios que consolidam em uma avaliação só do
 	// diario. Vazia vale CategoriaExercicio.
 	Categoria string
-	Situacao  SituacaoExercicio
+	// Ramo é o ramo do fork de onde a entrega é coletada. Vazio vale o ramo
+	// padrão do fork, que é o caso comum. Existe para a reentrega de uma
+	// parte do trabalho: o aluno corrige num ramo próprio enquanto o ramo
+	// padrão já avança para a parte seguinte, que divide o mesmo
+	// repositório.
+	Ramo     string
+	Situacao SituacaoExercicio
 }
 
 // CategoriaDe devolve a categoria do exercício, ou a padrão quando a coluna
@@ -148,6 +154,11 @@ func (e Exercicio) Validar() error {
 	if c := e.CategoriaDe(); strings.ContainsAny(c, "; \t") {
 		return fmt.Errorf("exercício %s: categoria %q não pode ter espaço nem ponto e vírgula", e.ID, c)
 	}
+	// Nome de ramo do git não tem espaço, e o ponto e vírgula é o separador
+	// do CSV.
+	if strings.ContainsAny(e.Ramo, "; \t") {
+		return fmt.Errorf("exercício %s: ramo %q não pode ter espaço nem ponto e vírgula", e.ID, e.Ramo)
+	}
 	return nil
 }
 
@@ -169,7 +180,11 @@ const (
 	ForkSemCommit SituacaoEntrega = "fork_sem_commit"
 	// SemCommitNoPrazo é fork com commits do aluno, todos depois do prazo.
 	SemCommitNoPrazo SituacaoEntrega = "sem_commit_no_prazo"
-	Entregue         SituacaoEntrega = "entregue"
+	// SemRamo é fork sem o ramo que o exercício pede (coluna ramo). Na
+	// reentrega, é o aluno que não pediu reentrega e mantém a nota já
+	// lançada: não é veredito de falta, e por isso fica fora das pendências.
+	SemRamo  SituacaoEntrega = "sem_ramo"
+	Entregue SituacaoEntrega = "entregue"
 	// Erro é falha de rede ou de API, e não um veredito sobre o aluno.
 	// Recoletar costuma resolver, e por isso ele não se confunde com os
 	// demais.
@@ -184,6 +199,7 @@ var rotulos = map[SituacaoEntrega]string{
 	SemFork:          "sem fork",
 	ForkSemCommit:    "fork sem commit do aluno",
 	SemCommitNoPrazo: "commits só depois do prazo",
+	SemRamo:          "sem o ramo do exercício",
 	Entregue:         "entregue",
 	Erro:             "erro na coleta",
 }

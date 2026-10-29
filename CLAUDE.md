@@ -78,7 +78,7 @@ ds122_n/
 └── .classroom/
     ├── config.toml          # turma, turno, padrão do grupo, namespace dos modelos
     ├── alunos.csv           # grr;nome;email;usuario;grupo;situacao
-    ├── exercicios.csv       # id;repo;titulo;prazo;peso;ordem;verificacao;imagem;categoria;situacao
+    ├── exercicios.csv       # id;repo;titulo;prazo;peso;ordem;verificacao;imagem;categoria;situacao;ramo
     ├── entregas.csv         # estado coletado do GitLab
     ├── notas.csv            # exercicio;grr;nota;comentario;corrigido_em
     └── verificacoes.csv     # exercicio;grr;situacao;aprovados;total;commit;...
@@ -427,7 +427,15 @@ Vocabulário fechado, gravado em `entregas.csv` e definido em
 `internal/turma/turma.go`:
 
 `sem_conta`, `sem_acesso`, `grupo_invisivel`, `sem_fork`, `fork_sem_commit`,
-`sem_commit_no_prazo`, `entregue`, `erro`.
+`sem_ramo`, `sem_commit_no_prazo`, `entregue`, `erro`.
+
+`sem_ramo` existe só para exercício com a coluna `ramo` preenchida, que é a
+reentrega de uma parte do trabalho num ramo próprio do fork, enquanto o ramo
+padrão avança para a parte seguinte no mesmo repositório. Com ramo, só os
+commits dele contam, e a existência é conferida por `Ramos`, nunca pela lista
+de commits. Para o professor, `sem_ramo` é "não pediu reentrega, mantém a
+nota": fica fora de `Pendentes`, e `podeMelhorar` o deixa seguir para o fork
+do colega de dupla.
 
 Duas escolhas que valem manter:
 

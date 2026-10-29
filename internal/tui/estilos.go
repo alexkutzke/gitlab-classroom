@@ -30,7 +30,7 @@ func corDaSituacao(s turma.SituacaoEntrega) lipgloss.Style {
 		return estOK
 	case turma.SemCommitNoPrazo, turma.ForkSemCommit:
 		return estAtencao
-	case "":
+	case "", turma.SemRamo:
 		return estFraco
 	}
 	return estErro
@@ -43,7 +43,7 @@ func simboloDaSituacao(s turma.SituacaoEntrega) string {
 		return "✓"
 	case turma.SemCommitNoPrazo, turma.ForkSemCommit:
 		return "▲"
-	case "":
+	case "", turma.SemRamo:
 		return "·"
 	}
 	return "✖"

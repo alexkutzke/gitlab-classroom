@@ -136,6 +136,9 @@ func TestExercicioValidar(t *testing.T) {
 		{"sem id", Exercicio{Repo: "ds122-html", Prazo: NovaData(2026, 9, 5)}, true},
 		{"sem repo", Exercicio{ID: "html", Prazo: NovaData(2026, 9, 5)}, true},
 		{"sem prazo", Exercicio{ID: "html", Repo: "ds122-html"}, true},
+		{"com ramo", Exercicio{ID: "t1", Repo: "ds122-p", Prazo: NovaData(2026, 11, 20), Ramo: "reentrega"}, false},
+		{"ramo com espaço", Exercicio{ID: "t1", Repo: "ds122-p", Prazo: NovaData(2026, 11, 20), Ramo: "re entrega"}, true},
+		{"ramo com separador", Exercicio{ID: "t1", Repo: "ds122-p", Prazo: NovaData(2026, 11, 20), Ramo: "a;b"}, true},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {

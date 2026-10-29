@@ -43,7 +43,7 @@ func cmdExercicios() *cobra.Command {
 }
 
 func cmdExerciciosAdd() *cobra.Command {
-	var id, repo, titulo, prazo, verificacao, imagem, categoria string
+	var id, repo, titulo, prazo, verificacao, imagem, categoria, ramo string
 	var peso float64
 	var ordem int
 
@@ -87,6 +87,7 @@ func cmdExerciciosAdd() *cobra.Command {
 			e := turma.Exercicio{
 				ID: id, Repo: repo, Titulo: titulo, Prazo: p, Peso: peso, Ordem: ordem,
 				Verificacao: verificacao, Imagem: imagem, Categoria: categoria,
+				Ramo:     strings.TrimSpace(ramo),
 				Situacao: turma.ExercicioAtivo,
 			}
 			if err := e.Validar(); err != nil {
@@ -98,6 +99,9 @@ func cmdExerciciosAdd() *cobra.Command {
 			}
 			fmt.Printf("Exercício %s cadastrado: %s, prazo %s, categoria %s.\n",
 				e.ID, t.Config.CaminhoModelo(e.Repo), e.Prazo.String(), e.CategoriaDe())
+			if e.Ramo != "" {
+				fmt.Printf("A entrega é coletada do ramo %s do fork, e não do ramo padrão.\n", e.Ramo)
+			}
 			return nil
 		},
 	}
@@ -110,21 +114,30 @@ func cmdExerciciosAdd() *cobra.Command {
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada, relativo à raiz do repositório")
 	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
 	c.Flags().StringVar(&categoria, "categoria", "", "grupo que consolida em uma avaliação do diario (padrão: exercicio)")
+	c.Flags().StringVar(&ramo, "ramo", "", "ramo do fork de onde a entrega é coletada (padrão: o ramo padrão do fork)")
 	c.MarkFlagRequired("repo")
 	c.MarkFlagRequired("prazo")
 	return c
 }
 
 func cmdExerciciosEditar() *cobra.Command {
-	var id, repo, titulo, prazo, verificacao, imagem, categoria string
+	var id, repo, titulo, prazo, verificacao, imagem, categoria, ramo string
 	var peso float64
 	var ordem int
+	var semRamo bool
 
 	c := &cobra.Command{
-		Use:     "editar",
-		Short:   "Altera um exercício já cadastrado",
-		Example: "  classroom exercicios editar --id html --prazo 2026-09-12",
-		Args:    cobra.NoArgs,
+		Use:   "editar",
+		Short: "Altera um exercício já cadastrado",
+		Long: "Altera só os campos informados.\n\n" +
+			"--ramo faz a coleta olhar um ramo do fork no lugar do ramo padrão. É o\n" +
+			"caso da reentrega de uma parte do trabalho, corrigida num ramo próprio\n" +
+			"enquanto o ramo padrão avança para a parte seguinte. Fork sem esse ramo\n" +
+			"fica como sem_ramo. --sem-ramo volta ao ramo padrão.",
+		Example: "  classroom exercicios editar --id html --prazo 2026-09-12\n" +
+			"  classroom exercicios editar --id trabalho1 --ramo reentrega --prazo 2026-11-20\n" +
+			"  classroom exercicios editar --id trabalho1 --sem-ramo",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, t, err := abrir()
 			if err != nil {
@@ -154,6 +167,19 @@ func cmdExerciciosEditar() *cobra.Command {
 			}
 			if cmd.Flags().Changed("categoria") {
 				e.Categoria = categoria
+			}
+			if cmd.Flags().Changed("ramo") && semRamo {
+				return fmt.Errorf("--ramo e --sem-ramo juntos: escolha um dos dois")
+			}
+			ramoAntes := e.Ramo
+			if cmd.Flags().Changed("ramo") {
+				e.Ramo = strings.TrimSpace(ramo)
+			}
+			if semRamo {
+				e.Ramo = ""
+			}
+			if e.Ramo != ramoAntes {
+				avisar("Ramo alterado: recolete com `classroom coletar --exercicio %s` para reclassificar as entregas.", e.ID)
 			}
 			if cmd.Flags().Changed("prazo") {
 				p, err := turma.ParseData(prazo)
@@ -186,6 +212,8 @@ func cmdExerciciosEditar() *cobra.Command {
 	c.Flags().StringVar(&verificacao, "verificacao", "", "comando da suíte automatizada")
 	c.Flags().StringVar(&imagem, "imagem", "", "imagem do contêiner onde a suíte roda")
 	c.Flags().StringVar(&categoria, "categoria", "", "grupo que consolida em uma avaliação do diario")
+	c.Flags().StringVar(&ramo, "ramo", "", "ramo do fork de onde a entrega é coletada; vazio volta ao ramo padrão")
+	c.Flags().BoolVar(&semRamo, "sem-ramo", false, "volta a coletar do ramo padrão do fork")
 	c.MarkFlagRequired("id")
 	return c
 }

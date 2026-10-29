@@ -31,7 +31,8 @@ type ResumoExercicio struct {
 	Vencido   bool
 	Situacoes map[turma.SituacaoEntrega]int
 	// Pendentes são os alunos ativos sem entrega no prazo, o que inclui
-	// quem não bifurcou e quem só commitou depois.
+	// quem não bifurcou e quem só commitou depois. sem_ramo fica de fora: na
+	// reentrega, é quem não pediu e mantém a nota já lançada.
 	Pendentes int
 	// Notas conta quantos alunos ativos já têm nota lançada.
 	Notas int
@@ -78,7 +79,7 @@ func PanoramaDe(t *turma.Turma, hoje turma.Data) Panorama {
 			en, temEntrega := entregas[a.GRR]
 			if temEntrega {
 				r.Situacoes[en.Situacao]++
-				if en.Situacao != turma.Entregue {
+				if en.Situacao != turma.Entregue && en.Situacao != turma.SemRamo {
 					r.Pendentes++
 				}
 			}

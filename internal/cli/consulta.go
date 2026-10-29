@@ -198,11 +198,11 @@ func escreverResumo(w io.Writer, r acoes.ResumoTurma) {
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "EXERCÍCIO\tCATEGORIA\tPRAZO\tENTREGUES\tATRASADAS\tSEM ENTREGA\tERROS\t"+
+	fmt.Fprintln(tw, "EXERCÍCIO\tCATEGORIA\tPRAZO\tENTREGUES\tATRASADAS\tSEM ENTREGA\tERROS\tSEM RAMO\t"+
 		"CORRIGIDAS\tA CORRIGIR\tVERIFICAÇÕES VELHAS\tDEVOLUTIVAS PENDENTES")
 	for _, e := range r.Exercicios {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-			e.ID, e.Categoria, e.Prazo, e.Entregues, e.Atrasadas, e.SemEntrega, e.Erros,
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+			e.ID, e.Categoria, e.Prazo, e.Entregues, e.Atrasadas, e.SemEntrega, e.Erros, e.SemRamo,
 			e.Corrigidas, e.PorCorrigir, e.VerificacoesDesatualizadas, e.DevolutivasPendentes)
 	}
 	tw.Flush()

@@ -63,6 +63,10 @@ func celula(e turma.Entrega, existe bool) string {
 		}
 	case turma.SemFork:
 		return "sem fork"
+	case turma.SemRamo:
+		// Na tabela publicada, sem_ramo é quem não pediu reentrega e mantém a
+		// nota. "sem ramo" soaria como falta para o aluno que está em dia.
+		return "sem reentrega"
 	case turma.SemConta:
 		return "sem conta"
 	case turma.SemAcesso:

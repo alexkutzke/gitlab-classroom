@@ -348,6 +348,9 @@ func (p *painel) detalhe(a *App, largura int) (string, moldura.Conteudo) {
 	d.campo("prazo", e.Prazo.Curta()+", "+distanciaDoPrazo(e.Prazo))
 	d.campo("peso", fmt.Sprintf("%g, categoria %s", e.Peso, e.CategoriaDe()))
 	d.campo("repositório", e.Repo)
+	if e.Ramo != "" {
+		d.campo("ramo", e.Ramo+estFraco.Render(", e não o padrão do fork"))
+	}
 	if e.TemSuite() {
 		d.campo("suíte", e.Verificacao)
 		imagem := e.Imagem
@@ -415,7 +418,7 @@ func (p *painel) detalhe(a *App, largura int) (string, moldura.Conteudo) {
 // ordemDasSituacoes lista as situações da melhor para a pior, que é a ordem
 // em que o detalhe as mostra.
 var ordemDasSituacoes = []turma.SituacaoEntrega{
-	turma.Entregue, turma.SemCommitNoPrazo, turma.ForkSemCommit, turma.SemFork,
+	turma.Entregue, turma.SemRamo, turma.SemCommitNoPrazo, turma.ForkSemCommit, turma.SemFork,
 	turma.SemAcesso, turma.GrupoInvisivel, turma.SemConta, turma.Erro,
 }
 

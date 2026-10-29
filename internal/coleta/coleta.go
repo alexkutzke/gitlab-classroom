@@ -476,8 +476,11 @@ func (c *Coletor) coletarAluno(a turma.Aluno, exercicios []turma.Exercicio, eq e
 // que aconteceu no exercício prepare de 2026/2. O fork que rende entrega, e o
 // veredito que não é sobre o repositório (erro, bloqueio de conta), encerram a
 // busca.
+//
+// sem_ramo também segue para o convite: na reentrega em dupla, o ramo pode ter
+// sido criado só no fork de quem bifurcou.
 func podeMelhorar(s turma.SituacaoEntrega) bool {
-	return s == turma.ForkSemCommit || s == turma.SemCommitNoPrazo
+	return s == turma.ForkSemCommit || s == turma.SemCommitNoPrazo || s == turma.SemRamo
 }
 
 // precedencia ordena as situações da melhor para a pior, para escolher entre o
@@ -562,7 +565,19 @@ func (c *Coletor) coletarNoProjeto(a turma.Aluno, e turma.Exercicio, p gl.Projet
 		return base
 	}
 
-	commits, err := c.Cliente.Commits(p.Completo, p.RamoPadrao, false)
+	ramo, ok, err := c.ramoDaEntrega(e, p)
+	if err != nil {
+		base.Situacao = turma.Erro
+		base.Detalhe = err.Error()
+		return base
+	}
+	if !ok {
+		base.Situacao = turma.SemRamo
+		base.Detalhe = "ramo " + e.Ramo + " não existe no fork"
+		return base
+	}
+
+	commits, err := c.Cliente.Commits(p.Completo, ramo, false)
 	if err != nil {
 		base.Situacao = turma.Erro
 		base.Detalhe = err.Error()
@@ -576,7 +591,7 @@ func (c *Coletor) coletarNoProjeto(a turma.Aluno, e turma.Exercicio, p gl.Projet
 		// nenhum aviso. Vale conferir antes de dizer que não fez nada.
 		if todos, err := c.Cliente.Commits(p.Completo, "", true); err == nil {
 			if fora := semOsDoModelo(todos, modelo); len(fora) > 0 {
-				base.Detalhe = fmt.Sprintf("%d commit(s) fora do ramo %s", len(fora), p.RamoPadrao)
+				base.Detalhe = fmt.Sprintf("%d commit(s) fora do ramo %s", len(fora), ramo)
 				base.Commits = len(fora)
 			}
 		}
@@ -600,6 +615,27 @@ func (c *Coletor) coletarNoProjeto(a turma.Aluno, e turma.Exercicio, p gl.Projet
 	}
 	base.Situacao = turma.SemCommitNoPrazo
 	return base
+}
+
+// ramoDaEntrega decide de que ramo do fork a entrega sai: o do exercício,
+// quando a coluna ramo está preenchida, ou o padrão do fork. O segundo
+// retorno é falso quando o fork não tem o ramo pedido.
+//
+// Com o ramo do exercício, o ramo padrão não conta. A reentrega de uma parte
+// do trabalho é corrigida num ramo próprio porque o ramo padrão já avançou
+// para a parte seguinte, e olhar os dois juntos traria esse trabalho novo
+// para a parte antiga. A existência é conferida pela lista de ramos, e não
+// pela lista de commits: pedir commits de um ramo que não existe não
+// distingue, em toda versão da API, ramo ausente de ramo sem commit.
+func (c *Coletor) ramoDaEntrega(e turma.Exercicio, p gl.Projeto) (string, bool, error) {
+	if e.Ramo == "" {
+		return p.RamoPadrao, true, nil
+	}
+	ramos, err := c.Cliente.Ramos(p.Completo)
+	if err != nil {
+		return "", false, err
+	}
+	return e.Ramo, contem(ramos, e.Ramo), nil
 }
 
 // shasDoModelo devolve os commits do repositório-modelo, para separar o que é

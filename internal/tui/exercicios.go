@@ -425,6 +425,11 @@ func (tx *telaExercicios) detalhe(a *App, largura int) (string, moldura.Conteudo
 
 	d.campo("id", e.ID)
 	d.campo("repositório", e.Repo)
+	ramo := e.Ramo
+	if ramo == "" {
+		ramo = estFraco.Render("padrão do fork")
+	}
+	d.campo("ramo", ramo)
 	d.campo(rotulo("título", "T"), valor(campoTitulo, e.Titulo))
 	d.campo(rotulo("prazo", "D"), valor(campoPrazo, e.Prazo.String()))
 	d.campo(rotulo("peso", "P"), valor(campoPeso, fmt.Sprintf("%g", e.Peso)))

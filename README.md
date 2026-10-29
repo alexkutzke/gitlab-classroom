@@ -181,6 +181,33 @@ Cada parte é coletada, clonada, verificada e corrigida como qualquer
 exercício. A entrega de cada uma é o commit mais recente até o prazo daquela
 parte, e a dupla é descoberta de novo em cada uma.
 
+#### Reentrega num ramo próprio
+
+Quando uma parte já entregue reabre para correção e o ramo padrão já avançou
+para a parte seguinte, o aluno corrige num ramo próprio, criado a partir do
+commit avaliado. A coluna `ramo` de `exercicios.csv` diz de que ramo do fork a
+entrega daquela parte é coletada:
+
+```bash
+classroom exercicios editar --id trabalho1 --ramo reentrega --prazo 2026-11-20
+classroom exercicios editar --id trabalho2 --ramo reentrega --prazo 2026-11-20
+classroom exercicios editar --id trabalho1 --sem-ramo    # volta ao ramo padrão
+```
+
+Com o ramo cadastrado, só os commits desse ramo contam: o ramo padrão, onde a
+parte seguinte avança, fica de fora. O prazo e a escolha do commit mais recente
+até 23h59 do dia continuam iguais, e o `clonar` posiciona o clone no commit do
+ramo como em qualquer exercício. A coluna é opcional; vazia, vale o ramo padrão
+do fork.
+
+Fork sem o ramo fica como `sem_ramo`, com o ramo esperado no detalhe. Na
+reentrega, é o aluno que não pediu reentrega e mantém a nota já lançada: não
+entra nas pendências do painel e tem contagem própria no `classroom resumo`
+(`sem_ramo` no JSON). Na tabela publicada pelo `relatorio`, aparece como "sem
+reentrega". A coleta regrava
+`entregas.csv`, então a linha desse aluno deixa de mostrar o commit avaliado
+antes; a nota, em `notas.csv`, não muda.
+
 ### Reconciliar as contas
 
 ```bash

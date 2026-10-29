@@ -117,7 +117,8 @@ func gravidade(s turma.SituacaoEntrega) int {
 		return 3
 	case turma.SemCommitNoPrazo:
 		return 2
-	case "":
+	case "", turma.SemRamo:
+		// sem_ramo é quem não pediu reentrega e mantém a nota: nada a fazer.
 		return 1
 	}
 	return 0
